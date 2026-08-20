@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marketplace Admin — Overclock</title>
+
+<!-- Pre-render auth peek -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MARKETPLACE ADMIN — programs, phase control, post-close, members.
+   Dark header ops feel; shares tokens with the requester surface.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root{
+  --mkt-line:#e4e8ef; --mkt-ink-soft:#4c545e; --mkt-paper:#f7f8fb;
+  --display:'Sora',sans-serif; --body:'Hanken Grotesk',sans-serif; --mono:'DM Mono',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--mkt-paper);color:var(--ink);font-family:var(--body)}
+
+#gate{position:fixed;inset:0;background:linear-gradient(160deg,#0a0d14 0%,#11151f 60%,#16278F 160%);display:flex;align-items:center;justify-content:center;z-index:50}
+html.has-token #gate{display:none}
+.gate-box{width:min(400px,92vw);background:#fff;border-radius:16px;padding:34px 32px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.gate-logo{font-family:var(--display);font-weight:800;font-size:20px}
+.gate-logo em{font-style:normal;color:var(--blue)}
+.gate-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--orange-deep);margin:4px 0 16px}
+.gate-title{font-family:var(--display);font-size:21px;font-weight:700;margin:0 0 4px}
+.gate-sub{font-size:13.5px;color:var(--mkt-ink-soft);margin:0 0 18px}
+.gate-field{margin-bottom:12px}
+.gate-field label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:5px}
+.gate-input{width:100%;border:1.5px solid var(--mkt-line);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px}
+.gate-input:focus{outline:none;border-color:var(--blue)}
+.gate-btn{width:100%;margin-top:6px;background:var(--blue);color:#fff;border:0;border-radius:9px;padding:12px;font-family:var(--display);font-weight:600;font-size:14.5px;cursor:pointer}
+.gate-btn:hover{background:var(--blue-deep)}
+.gate-btn:disabled{opacity:.6}
+.gate-error{color:#C0392B;font-size:13px;min-height:18px;margin-top:10px}
+
+#app{display:none;min-height:100vh}
+html.has-token #app{display:block}
+.adm-header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:20px;height:60px;padding:0 26px;background:var(--near-black);border-bottom:3px solid var(--blue)}
+.adm-brand{font-family:var(--display);font-weight:800;font-size:16px;color:#fff}
+.adm-brand em{font-style:normal;color:var(--blue-bright)}
+.adm-brand .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:2px;color:var(--orange-bright);margin-left:8px;vertical-align:2px}
+.adm-nav{display:flex;gap:2px}
+.adm-nav button{border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:rgba(255,255,255,.65);padding:8px 13px;border-radius:8px;cursor:pointer}
+.adm-nav button:hover{color:#fff}
+.adm-nav button.active{color:#fff;background:rgba(255,255,255,.12)}
+.header-spacer{flex:1}
+.header-user{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.5)}
+.link-btn{border:0;background:none;font-family:var(--mono);font-size:11.5px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+.wrap{max-width:1200px;margin:0 auto;padding:30px 26px 80px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:2.2px;text-transform:uppercase;color:var(--orange-deep);margin-bottom:6px}
+h1.page-title{font-family:var(--display);font-weight:800;font-size:clamp(21px,3vw,27px);margin:0 0 20px}
+.section-title{font-family:var(--display);font-weight:700;font-size:15.5px;margin:28px 0 12px}
+
+.tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--mkt-line);border-radius:12px;overflow:hidden}
+.tbl th{font-family:var(--mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--gray-soft);text-align:left;padding:10px 13px;border-bottom:1px solid var(--mkt-line);background:var(--mkt-paper)}
+.tbl td{padding:10px 13px;font-size:13px;border-bottom:1px solid var(--mkt-line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .num{font-family:var(--mono);text-align:right}
+.tbl-wrap{overflow-x:auto}
+.tbl a.act{font-family:var(--mono);font-size:11px;color:var(--blue);cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin-right:10px}
+.tbl input,.tbl select{border:1.5px solid var(--mkt-line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px}
+.tbl input.n{width:90px;font-family:var(--mono);text-align:right}
+
+.phase-chip{font-family:var(--mono);font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.phase-draft{background:var(--off-white);color:var(--gray-mid)}
+.phase-demand_open{background:var(--blue-soft);color:var(--blue-deep)}
+.phase-review{background:#f3e8ff;color:#6b21a8}
+.phase-confirm_open{background:var(--orange-soft);color:var(--orange-deep)}
+.phase-closed{background:#dcfce7;color:#166534}
+
+.btn{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-family:var(--display);font-weight:600;font-size:13px;cursor:pointer}
+.btn:hover{background:var(--blue-deep)}
+.btn.orange{background:var(--orange)}
+.btn.orange:hover{background:var(--orange-deep)}
+.btn.ghost{background:none;color:var(--ink);border:1.5px solid var(--mkt-line)}
+.btn.ghost:hover{border-color:var(--blue);color:var(--blue)}
+.btn.sm{padding:6px 12px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+.toolbar-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+
+.panel{background:#fff;border:1px solid var(--mkt-line);border-radius:12px;padding:22px;margin-bottom:18px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid .full{grid-column:1/-1}
+.form-grid label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:4px}
+.form-grid input,.form-grid select,.form-grid textarea{width:100%;border:1.5px solid var(--mkt-line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13.5px}
+.form-grid textarea{resize:vertical;min-height:60px}
+.check-row{display:flex;align-items:center;gap:8px;font-size:13px}
+
+/* phase stepper */
+.stepper{display:flex;gap:0;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+.step{display:flex;align-items:center;gap:0}
+.step .dot{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;padding:7px 13px;border-radius:999px;background:var(--off-white);color:var(--gray-soft);white-space:nowrap}
+.step.done .dot{background:#dcfce7;color:#166534}
+.step.cur .dot{background:var(--blue);color:#fff}
+.step .arrow{color:var(--mkt-line);margin:0 6px;font-size:15px}
+.empty{background:#fff;border:1px dashed var(--mkt-line);border-radius:12px;padding:30px;text-align:center;color:var(--gray-soft);font-size:13.5px}
+.back-btn{border:0;background:none;font-family:var(--mono);font-size:11.5px;color:var(--gray-mid);cursor:pointer;padding:0;margin-bottom:14px;text-decoration:underline;text-underline-offset:3px}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:#fff;border:1px solid var(--mkt-line);border-radius:12px;padding:16px}
+.kpi .v{font-family:var(--display);font-weight:800;font-size:22px}
+.kpi .l{font-family:var(--mono);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gray-soft);margin-top:3px}
+
+.item-search{position:relative}
+.item-results{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--mkt-line);border-radius:0 0 10px 10px;max-height:260px;overflow-y:auto;z-index:10;box-shadow:0 14px 30px rgba(0,0,0,.12)}
+.item-results div{padding:9px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--mkt-paper)}
+.item-results div:hover{background:var(--blue-tint)}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);background:var(--ink);color:#fff;font-family:var(--mono);font-size:11px;padding:12px 20px;border-radius:9px;opacity:0;pointer-events:none;transition:all .22s;z-index:60}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media(max-width:640px){ .adm-header{gap:8px;padding:0 12px} .header-user{display:none} .wrap{padding:20px 14px 60px} .form-grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-logo">OVER<em>CLOCK</em></div>
+    <div class="gate-eyebrow">Marketplace · Admin Console</div>
+    <h1 class="gate-title">Sign in</h1>
+    <p class="gate-sub">Admin and program-manager access only.</p>
+    <div class="gate-field"><label>Email</label><input class="gate-input" id="email" type="email" autocomplete="email"></div>
+    <div class="gate-field"><label>Password</label><input class="gate-input" id="password" type="password" autocomplete="current-password"></div>
+    <button class="gate-btn" id="loginBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="adm-header">
+    <div class="adm-brand">OVER<em>CLOCK</em><span class="tag">MKT ADMIN</span></div>
+    <nav class="adm-nav">
+      <button id="nav_programs" class="active" onclick="go('programs')">Programs</button>
+      <button id="nav_postclose" onclick="go('postclose')">Post-Close</button>
+      <button id="nav_members" onclick="go('members')">Members</button>
+    </nav>
+    <div class="header-spacer"></div>
+    <span class="header-user" id="headerUser"></span>
+    <button class="link-btn" onclick="signOut()">Sign out</button>
+  </header>
+  <div class="wrap" id="view"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:monospace;color:#C0392B;">Missing config — copy config.example.js → config.local.js</div>';
+  throw new Error('APP_CONFIG missing');
+}
+const sb = supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+let me=null, member=null, programs=[], members=[];
+const PHASES = ['draft','demand_open','review','confirm_open','closed'];
+const PHASE_LABEL = {draft:'Draft', demand_open:'Demand open', review:'Review', confirm_open:'Confirm open', closed:'Closed'};
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => n == null ? '—' : '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const toast = m => { const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); };
+const dtLocal = v => v ? new Date(v).toISOString().slice(0,16) : '';
+
+function downloadCSV(name, rows){
+  if(!rows.length){ toast('Nothing to export'); return; }
+  const cols = Object.keys(rows[0]);
+  const csv = [cols.join(',')].concat(rows.map(r=>cols.map(c=>{
+    let v = r[c] == null ? '' : String(r[c]);
+    return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+  }).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ============================================================
+// AUTH — must be admin or program_manager
+// ============================================================
+function gateErr(m){ document.getElementById('gateError').textContent = m; }
+async function signIn(){
+  const email=document.getElementById('email').value.trim(), password=document.getElementById('password').value;
+  if(!email||!password){ gateErr('Email and password required'); return; }
+  const b=document.getElementById('loginBtn'); b.disabled=true; b.textContent='Signing in…'; gateErr('');
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  b.disabled=false; b.textContent='Sign In';
+  if(error){ gateErr(error.message.includes('Invalid')?'Wrong email or password':error.message); return; }
+  await enterApp(data.session);
+}
+async function signOut(){
+  await sb.auth.signOut(); me=null; member=null;
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('app').style.display='none';
+  document.getElementById('gate').style.display='flex';
+}
+async function enterApp(session){
+  me = session.user;
+  const { data } = await sb.from('mkt_members').select('*').eq('id', me.id).maybeSingle();
+  member = data;
+  if(!member || !['admin','program_manager'].includes(member.role)){
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('gate').style.display='flex';
+    document.getElementById('app').style.display='none';
+    gateErr('This account does not have admin or program-manager access.');
+    await sb.auth.signOut();
+    return;
+  }
+  document.documentElement.classList.add('has-token');
+  document.getElementById('gate').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('headerUser').textContent = `${me.email} · ${member.role}`;
+  await go('programs');
+}
+window.addEventListener('load', async () => {
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session) await enterApp(session);
+  else { document.documentElement.classList.remove('has-token'); document.getElementById('email').focus(); }
+});
+
+// ============================================================
+// ROUTER
+// ============================================================
+async function go(view, arg){
+  ['programs','postclose','members'].forEach(v => document.getElementById('nav_'+v)?.classList.toggle('active', v===view));
+  const el = document.getElementById('view');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  if(view==='programs')  await renderPrograms(el);
+  if(view==='program')   await renderProgram(el, arg);
+  if(view==='postclose') await renderPostClose(el);
+  if(view==='members')   await renderMembers(el);
+  window.scrollTo(0,0);
+}
+
+// ============================================================
+// PROGRAMS LIST + CREATE
+// ============================================================
+async function renderPrograms(el){
+  const { data } = await sb.from('mkt_programs').select('*').order('created_at',{ascending:false});
+  programs = data||[];
+  let html = `<div class="eyebrow">Marketplace Console</div><h1 class="page-title">Programs</h1>
+    <div class="toolbar-row"><button class="btn" onclick="newProgram()">+ New program</button></div>`;
+  if(!programs.length) html += '<div class="empty">No programs yet — create the first one.</div>';
+  else html += `<div class="tbl-wrap"><table class="tbl">
+    <tr><th>Name</th><th>Phase</th><th>Demand deadline</th><th>Confirm deadline</th><th></th></tr>` +
+    programs.map(p=>`<tr>
+      <td><b>${esc(p.name)}</b></td>
+      <td><span class="phase-chip phase-${p.phase}">${PHASE_LABEL[p.phase]}</span></td>
+      <td class="num">${p.demand_deadline? new Date(p.demand_deadline).toLocaleDateString():'—'}</td>
+      <td class="num">${p.confirm_deadline? new Date(p.confirm_deadline).toLocaleDateString():'—'}</td>
+      <td><a class="act" onclick="go('program','${p.id}')">Open</a></td>
+    </tr>`).join('') + '</table></div>';
+  el.innerHTML = html;
+}
+async function newProgram(){
+  const { data, error } = await sb.from('mkt_programs')
+    .insert({ name:'Untitled program', owner_id: me.id }).select().single();
+  if(error){ toast(error.message); return; }
+  go('program', data.id);
+}
+
+// ============================================================
+// PROGRAM DETAIL — setup, items, phase control, reports
+// ============================================================
+let cur=null, curItems=[], catalogCache=null;
+async function renderProgram(el, id){
+  const [pRes, piRes] = await Promise.all([
+    sb.from('mkt_programs').select('*').eq('id', id).single(),
+    sb.from('mkt_program_items').select('*').eq('program_id', id)
+  ]);
+  cur = pRes.data;
+  if(!cur){ el.innerHTML='<div class="empty">Not found.</div>'; return; }
+  const ids = (piRes.data||[]).map(x=>x.item_id);
+  const items = ids.length ? (await sb.from('v_mkt_items').select('*').in('item_id', ids)).data||[] : [];
+  curItems = (piRes.data||[]).map(pi=>({ ...pi, item: items.find(i=>i.item_id===pi.item_id) }));
+
+  const stepIdx = PHASES.indexOf(cur.phase);
+  let html = `<button class="back-btn" onclick="go('programs')">← All programs</button>
+    <div class="eyebrow">Program</div><h1 class="page-title">${esc(cur.name)}</h1>`;
+
+  // phase stepper + control
+  html += `<div class="panel">
+    <div class="stepper">${PHASES.map((ph,i)=>`
+      <span class="step ${i<stepIdx?'done':''} ${i===stepIdx?'cur':''}"><span class="dot">${PHASE_LABEL[ph]}</span>${i<PHASES.length-1?'<span class="arrow">→</span>':''}</span>`).join('')}
+    </div>
+    <div class="toolbar-row" style="margin:14px 0 0">
+      ${stepIdx<PHASES.length-1?`<button class="btn" onclick="advance('${PHASES[stepIdx+1]}')">Advance to ${PHASE_LABEL[PHASES[stepIdx+1]]} →</button>`:''}
+      ${stepIdx>0?`<button class="btn ghost sm" onclick="advance('${PHASES[stepIdx-1]}')">↩ Revert to ${PHASE_LABEL[PHASES[stepIdx-1]]}</button>`:''}
+      ${cur.phase==='review'?`<span style="font-size:12px;color:var(--gray-soft)">Advancing to Confirm open snapshots today's catalog prices onto all demand lines.</span>`:''}
+    </div></div>`;
+
+  // setup form
+  html += `<div class="panel"><h2 class="section-title" style="margin-top:0">Setup</h2>
+    <div class="form-grid">
+      <div class="full"><label>Name</label><input id="pf_name" value="${esc(cur.name)}"></div>
+      <div class="full"><label>Description (marketplace landing)</label><textarea id="pf_desc">${esc(cur.description||'')}</textarea></div>
+      <div><label>Demand deadline</label><input id="pf_dd" type="datetime-local" value="${dtLocal(cur.demand_deadline)}"></div>
+      <div><label>Confirm deadline</label><input id="pf_cd" type="datetime-local" value="${dtLocal(cur.confirm_deadline)}"></div>
+      <div><label>Prices in Phase 1</label><select id="pf_hide"><option value="true" ${cur.prices_hidden_phase1?'selected':''}>Hidden (default)</option><option value="false" ${cur.prices_hidden_phase1?'':'selected'}>Visible</option></select></div>
+      <div><label>Unconfirmed at close</label><select id="pf_policy"><option value="lapse" ${cur.unconfirmed_policy==='lapse'?'selected':''}>Lapses (no order)</option><option value="bulk_confirm" ${cur.unconfirmed_policy==='bulk_confirm'?'selected':''}>Bulk-confirm at Phase 1 qty</option></select></div>
+    </div>
+    <div class="toolbar-row" style="margin:16px 0 0"><button class="btn" onclick="saveProgram()">Save setup</button></div></div>`;
+
+  // items
+  html += `<div class="panel"><h2 class="section-title" style="margin-top:0">Items in this program (${curItems.length})</h2>
+    <div class="item-search" style="max-width:480px;margin-bottom:14px">
+      <input id="itemSearch" class="gate-input" placeholder="Search catalog to add items… (name or SKU)" oninput="searchCatalog(this.value)">
+      <div class="item-results" id="itemResults" style="display:none"></div>
+    </div>
+    <div class="tbl-wrap"><table class="tbl">
+    <tr><th>SKU</th><th>Item</th><th class="num">Unit price</th><th class="num">Min</th><th class="num">Max</th><th></th></tr>` +
+    curItems.map(x=>`<tr>
+      <td class="num" style="text-align:left">${esc(x.item?.sku||'')}</td>
+      <td>${esc(x.item?.name||'?')}</td>
+      <td class="num">${money(x.item?.unit_price)}</td>
+      <td class="num"><input class="n" type="number" value="${x.min_qty??''}" placeholder="—" onchange="updPI('${x.item_id}','min_qty',this.value)"></td>
+      <td class="num"><input class="n" type="number" value="${x.max_qty??''}" placeholder="—" onchange="updPI('${x.item_id}','max_qty',this.value)"></td>
+      <td><a class="act" style="color:#C0392B" onclick="removePI('${x.item_id}')">Remove</a></td>
+    </tr>`).join('') + '</table></div></div>';
+
+  // reports
+  html += `<div class="panel"><h2 class="section-title" style="margin-top:0">Reports</h2>
+    <div class="toolbar-row">
+      <button class="btn ghost sm" onclick="reportRollup()">Demand rollup by item</button>
+      <button class="btn ghost sm" onclick="reportDelta()">Phase 1 vs. final delta</button>
+      <button class="btn ghost sm" onclick="reportCC()">Rollup by cost center</button>
+    </div>
+    <div id="reportOut"></div></div>`;
+
+  el.innerHTML = html;
+}
+async function advance(phase){
+  const { error } = await sb.rpc('mkt_advance_phase', { p_program: cur.id, p_phase: phase });
+  if(error){ toast(error.message); return; }
+  toast(`Phase → ${PHASE_LABEL[phase]}`);
+  go('program', cur.id);
+}
+async function saveProgram(){
+  const patch = {
+    name: document.getElementById('pf_name').value.trim() || 'Untitled program',
+    description: document.getElementById('pf_desc').value.trim() || null,
+    demand_deadline: document.getElementById('pf_dd').value ? new Date(document.getElementById('pf_dd').value).toISOString() : null,
+    confirm_deadline: document.getElementById('pf_cd').value ? new Date(document.getElementById('pf_cd').value).toISOString() : null,
+    prices_hidden_phase1: document.getElementById('pf_hide').value === 'true',
+    unconfirmed_policy: document.getElementById('pf_policy').value
+  };
+  const { error } = await sb.from('mkt_programs').update(patch).eq('id', cur.id);
+  if(error){ toast(error.message); return; }
+  toast('Saved'); go('program', cur.id);
+}
+async function searchCatalog(q){
+  const box = document.getElementById('itemResults');
+  if(!q || q.length<2){ box.style.display='none'; return; }
+  if(!catalogCache){
+    const { data } = await sb.from('v_mkt_items').select('*').eq('active', true).limit(1000);
+    catalogCache = data||[];
+  }
+  const ql = q.toLowerCase();
+  const inProg = new Set(curItems.map(x=>x.item_id));
+  const hits = catalogCache.filter(i=>!inProg.has(i.item_id) && ((i.name||'').toLowerCase().includes(ql) || (i.sku||'').toLowerCase().includes(ql))).slice(0,12);
+  box.innerHTML = hits.length ? hits.map(i=>`<div onclick="addPI('${i.item_id}')"><b>${esc(i.sku||'')}</b> · ${esc(i.name)} · ${money(i.unit_price)}</div>`).join('') : '<div>No matches</div>';
+  box.style.display='block';
+}
+async function addPI(itemId){
+  const { error } = await sb.from('mkt_program_items').insert({ program_id: cur.id, item_id: itemId });
+  if(error){ toast(error.message); return; }
+  document.getElementById('itemResults').style.display='none';
+  document.getElementById('itemSearch').value='';
+  go('program', cur.id);
+}
+async function updPI(itemId, field, val){
+  const v = val === '' ? null : parseInt(val,10);
+  const { error } = await sb.from('mkt_program_items').update({ [field]: v }).eq('program_id', cur.id).eq('item_id', itemId);
+  if(error) toast(error.message);
+}
+async function removePI(itemId){
+  const { error } = await sb.from('mkt_program_items').delete().eq('program_id', cur.id).eq('item_id', itemId);
+  if(error){ toast(error.message); return; }
+  go('program', cur.id);
+}
+
+// ---------- reports ----------
+async function fetchLinesJoined(){
+  const { data: lines } = await sb.from('mkt_demand_lines').select('*').eq('program_id', cur.id);
+  const { data: mems } = await sb.from('mkt_members').select('id,name,email,cost_center');
+  const memById = Object.fromEntries((mems||[]).map(m=>[m.id,m]));
+  return (lines||[]).map(l=>({ ...l, member: memById[l.user_id]||{} , item: curItems.find(x=>x.item_id===l.item_id)?.item||{} }));
+}
+function renderReport(title, rows, csvName){
+  const out = document.getElementById('reportOut');
+  if(!rows.length){ out.innerHTML = '<div class="empty">No data yet.</div>'; return; }
+  const cols = Object.keys(rows[0]);
+  out.innerHTML = `<div class="toolbar-row" style="justify-content:space-between"><b style="font-size:13.5px">${esc(title)}</b>
+      <button class="btn ghost sm" onclick='downloadCSV(${JSON.stringify(csvName)}, window._rep)'>Export CSV</button></div>
+    <div class="tbl-wrap"><table class="tbl"><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>` +
+    rows.map(r=>`<tr>${cols.map(c=>`<td class="${typeof r[c]==='number'?'num':''}">${typeof r[c]==='number' && /value|price|total/.test(c) ? money(r[c]) : esc(r[c])}</td>`).join('')}</tr>`).join('') + '</table></div>';
+  window._rep = rows;
+}
+async function reportRollup(){
+  const lines = (await fetchLinesJoined()).filter(l=>l.status!=='removed');
+  const by = {};
+  lines.forEach(l=>{
+    const k = l.item_id;
+    by[k] = by[k] || { sku:l.item.sku||'', item:l.item.name||'?', total_qty:0, requesters:new Set(), projected_value:0 };
+    const q = l.qty_final ?? l.qty_phase1;
+    by[k].total_qty += q;
+    by[k].requesters.add(l.user_id);
+    by[k].projected_value += q * (l.unit_price_snapshot ?? l.item.unit_price ?? 0);
+  });
+  renderReport('Demand rollup by item',
+    Object.values(by).map(r=>({ sku:r.sku, item:r.item, total_qty:r.total_qty, requesters:r.requesters.size, projected_value:+r.projected_value.toFixed(2) })),
+    `rollup_${cur.name.replace(/\W+/g,'_')}.csv`);
+}
+async function reportDelta(){
+  const lines = await fetchLinesJoined();
+  const rows = lines.filter(l=>l.qty_final != null && l.qty_final !== l.qty_phase1 || l.status==='removed')
+    .map(l=>({ requester:l.member.name||l.member.email||'?', item:l.item.name||'?', phase1:l.qty_phase1, final:l.status==='removed'?0:(l.qty_final??l.qty_phase1), delta:(l.status==='removed'?0:(l.qty_final??l.qty_phase1))-l.qty_phase1 }));
+  renderReport('Phase 1 vs. final delta (changed lines only)', rows, `delta_${cur.name.replace(/\W+/g,'_')}.csv`);
+}
+async function reportCC(){
+  const lines = (await fetchLinesJoined()).filter(l=>l.status!=='removed');
+  const by = {};
+  lines.forEach(l=>{
+    const k = l.member.cost_center || '—';
+    by[k] = by[k] || { cost_center:k, total_qty:0, projected_value:0 };
+    const q = l.qty_final ?? l.qty_phase1;
+    by[k].total_qty += q;
+    by[k].projected_value += q * (l.unit_price_snapshot ?? l.item.unit_price ?? 0);
+  });
+  renderReport('Rollup by cost center', Object.values(by).map(r=>({...r, projected_value:+r.projected_value.toFixed(2)})), `cc_rollup_${cur.name.replace(/\W+/g,'_')}.csv`);
+}
+
+// ============================================================
+// POST-CLOSE — shipping costs + invoices
+// ============================================================
+async function renderPostClose(el){
+  const [oRes, pRes, mRes, iRes] = await Promise.all([
+    sb.from('mkt_orders').select('*').order('created_at',{ascending:false}),
+    sb.from('mkt_programs').select('id,name,phase'),
+    sb.from('mkt_members').select('id,name,email,cost_center'),
+    sb.from('mkt_invoices').select('*').order('created_at',{ascending:false})
+  ]);
+  const orders=oRes.data||[], progs=Object.fromEntries((pRes.data||[]).map(p=>[p.id,p])), mems=Object.fromEntries((mRes.data||[]).map(m=>[m.id,m]));
+  const invByOrder = {};
+  (iRes.data||[]).forEach(i=>{ if(i.status==='issued') invByOrder[i.order_id]=i; });
+
+  let html = `<div class="eyebrow">Post-Close Queue</div><h1 class="page-title">Shipping costs & chargeback invoices</h1>`;
+  const kTotal = orders.length, kInvoiced = orders.filter(o=>o.status==='invoiced').length, kPending = orders.filter(o=>o.shipping_cost==null).length;
+  html += `<div class="kpis">
+    <div class="kpi"><div class="v">${kTotal}</div><div class="l">Confirmed orders</div></div>
+    <div class="kpi"><div class="v">${kPending}</div><div class="l">Awaiting shipping cost</div></div>
+    <div class="kpi"><div class="v">${kInvoiced}</div><div class="l">Invoiced</div></div>
+  </div>`;
+  if(!orders.length){ el.innerHTML = html + '<div class="empty">No confirmed orders yet.</div>'; return; }
+  html += `<div class="toolbar-row">
+      <button class="btn orange" onclick="bulkInvoice()">Generate all invoices (with shipping entered)</button>
+      <button class="btn ghost sm" onclick="exportInvoices()">Finance CSV export</button>
+    </div>
+    <div class="tbl-wrap"><table class="tbl">
+    <tr><th>Program</th><th>Requester</th><th>Cost center</th><th>Status</th><th class="num">Subtotal</th><th class="num">Shipping cost</th><th>Shipped date</th><th>Invoice</th><th></th></tr>` +
+    orders.map(o=>{
+      const m = mems[o.user_id]||{}, inv = invByOrder[o.id];
+      return `<tr>
+        <td>${esc(progs[o.program_id]?.name||'—')}</td>
+        <td>${esc(m.name||m.email||'?')}</td>
+        <td class="num" style="text-align:left">${esc(m.cost_center||'—')}</td>
+        <td><span class="phase-chip phase-${o.status==='invoiced'?'closed':o.status==='shipped'?'review':'demand_open'}">${o.status}</span></td>
+        <td class="num">${money(o.subtotal)}</td>
+        <td class="num"><input class="n" type="number" step="0.01" value="${o.shipping_cost??''}" placeholder="0.00" onchange="setShip('${o.id}', this.value)"></td>
+        <td><input type="date" value="${o.shipped_date??''}" onchange="setShipDate('${o.id}', this.value)"></td>
+        <td>${inv?`<span style="font-family:var(--mono);font-size:11.5px">${esc(inv.invoice_number)}</span>`:'—'}</td>
+        <td><a class="act" onclick="genInvoice('${o.id}')">${inv?'Regenerate':'Generate invoice'}</a></td>
+      </tr>`;
+    }).join('') + '</table></div>';
+  el.innerHTML = html;
+  window._pcOrders = orders; window._pcInvs = iRes.data||[]; window._pcProgs = progs; window._pcMems = mems;
+}
+async function setShip(orderId, val){
+  const { error } = await sb.from('mkt_orders').update({ shipping_cost: val===''?null:parseFloat(val) }).eq('id', orderId);
+  if(error) toast(error.message); else toast('Shipping cost saved');
+}
+async function setShipDate(orderId, val){
+  const { error } = await sb.from('mkt_orders').update({ shipped_date: val||null, status: val ? 'shipped' : 'confirmed' }).eq('id', orderId);
+  if(error) toast(error.message);
+}
+async function genInvoice(orderId){
+  const { data, error } = await sb.rpc('mkt_generate_invoice', { p_order: orderId });
+  if(error){ toast(error.message); return; }
+  toast(`Invoice ${data.invoice_number} issued`);
+  go('postclose');
+}
+async function bulkInvoice(){
+  const eligible = (window._pcOrders||[]).filter(o=>o.shipping_cost!=null && o.status!=='invoiced');
+  if(!eligible.length){ toast('No orders ready (need shipping cost, not yet invoiced)'); return; }
+  let n=0;
+  for(const o of eligible){
+    const { error } = await sb.rpc('mkt_generate_invoice', { p_order: o.id });
+    if(!error) n++;
+  }
+  toast(`${n} invoice${n===1?'':'s'} generated`);
+  go('postclose');
+}
+function exportInvoices(){
+  const rows = (window._pcInvs||[]).filter(i=>i.status==='issued').map(i=>{
+    const o=(window._pcOrders||[]).find(o=>o.id===i.order_id)||{};
+    return { invoice_number:i.invoice_number, program:(window._pcProgs[o.program_id]||{}).name||'', requester:((window._pcMems[o.user_id]||{}).email)||'', cost_center:i.cost_center||'', subtotal:i.subtotal, shipping:i.shipping, total:i.total, issued_date:i.issued_date };
+  });
+  downloadCSV('chargeback_invoices.csv', rows);
+}
+
+// ============================================================
+// MEMBERS
+// ============================================================
+async function renderMembers(el){
+  const { data } = await sb.from('mkt_members').select('*').order('created_at');
+  members = data||[];
+  let html = `<div class="eyebrow">Access Control</div><h1 class="page-title">Members</h1>
+    <p style="font-size:13px;color:var(--gray-soft);margin:-8px 0 18px">New users appear here after they register on the marketplace page. Assign roles and cost centers; deactivate to revoke access (history preserved).</p>`;
+  html += `<div class="tbl-wrap"><table class="tbl">
+    <tr><th>Name</th><th>Email</th><th>Role</th><th>Cost center</th><th>Active</th></tr>` +
+    members.map(m=>`<tr>
+      <td>${esc(m.name||'—')}</td>
+      <td class="num" style="text-align:left">${esc(m.email||'')}</td>
+      <td><select onchange="updMember('${m.id}',{role:this.value})" ${m.id===me.id?'disabled':''}>
+        ${['admin','program_manager','requester'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}</select></td>
+      <td><input value="${esc(m.cost_center||'')}" placeholder="CC-…" onchange="updMember('${m.id}',{cost_center:this.value.trim()||null})"></td>
+      <td><input type="checkbox" ${m.active?'checked':''} ${m.id===me.id?'disabled':''} onchange="updMember('${m.id}',{active:this.checked})"></td>
+    </tr>`).join('') + '</table></div>';
+  el.innerHTML = html;
+}
+async function updMember(id, patch){
+  const { error } = await sb.from('mkt_members').update(patch).eq('id', id);
+  if(error) toast(error.message); else toast('Member updated');
+}
+</script>
+</body>
+</html>

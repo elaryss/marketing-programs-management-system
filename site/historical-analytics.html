@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historical Analytics — Overclock Hub</title>
+
+<!-- Pre-render auth peek: skip showing gate if a Supabase session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ ANALYTICS · page-specific (rail layout + KPI tiles + reports) ━━━ */
+
+:root{
+  --teal:#14A8AD;
+  --rail:#0c1019;
+}
+
+/* LAYOUT — dark rail FIXED on the left, light main flows on the right */
+.layout{display:flex;align-items:flex-start;padding-left:288px}
+.main{flex:1;min-width:0;padding:0 30px 50px}
+.rail{
+  width:288px;
+  background:var(--rail);color:#e6e9ef;
+  position:fixed;left:0;top:54px;bottom:0;
+  overflow-y:auto;
+  padding:26px 22px;
+  border-right:1px solid rgba(255,255,255,0.07);
+  display:flex;flex-direction:column;
+  z-index:5;
+}
+/* Push the Custom Report button to the bottom of the rail */
+.rail .custom-rpt-btn{margin-top:auto}
+.rail-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:var(--blue-bright);margin-bottom:6px}
+.rail-title{font-family:var(--display);font-weight:700;font-size:20px;color:#fff;letter-spacing:-0.01em;margin-bottom:24px}
+
+/* HERO — slim band inside .main */
+.hero{padding:30px 0 16px}
+.hero-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gray-mid);margin-bottom:10px;
+}
+.hero-title{
+  font-family:var(--display);font-size:34px;font-weight:700;
+  color:var(--ink);letter-spacing:-0.02em;line-height:1.04;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+}
+.hero-title em{font-style:normal;font-weight:700;color:var(--blue)}
+.demo-tag{
+  display:inline-block;background:var(--orange);color:#241000;
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;
+  padding:4px 9px;border-radius:3px;text-transform:uppercase;font-weight:500;
+}
+.hero-sub{font-size:12.5px;color:var(--gray-mid);margin-top:8px;max-width:760px;line-height:1.6}
+
+/* FILTERS — live in the dark rail */
+.filter-group{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.filter-lbl{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:#9aa3b2}
+.filter-select{
+  background:#161b27;border:1px solid rgba(255,255,255,0.16);border-radius:4px;
+  padding:9px 26px 9px 11px;
+  font-family:var(--mono);font-size:11px;color:#fff;
+  cursor:pointer;appearance:none;width:100%;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239aa3b2'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+}
+.filter-select:focus{outline:none;border-color:var(--blue-bright)}
+.seg{
+  display:flex;flex-wrap:wrap;
+  border:1px solid rgba(255,255,255,0.14);border-radius:4px;overflow:hidden;
+  background:#161b27;
+}
+.seg button{
+  flex:1;background:#161b27;border:none;padding:8px 6px;
+  font-family:var(--mono);font-size:10px;cursor:pointer;color:#aeb6c2;
+  transition:background 0.15s,color 0.15s;
+  border-right:1px solid rgba(255,255,255,0.10);
+  letter-spacing:0.06em;text-transform:uppercase;
+}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--blue);color:#fff;font-weight:500}
+.filter-reset{
+  margin-top:6px;width:100%;
+  background:transparent;border:1px solid rgba(255,255,255,0.18);color:#cdd4df;
+  padding:9px 14px;border-radius:4px;
+  font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;
+  cursor:pointer;transition:border-color 0.15s,color 0.15s;
+}
+.filter-reset:hover{color:#fff;border-color:var(--blue-bright)}
+
+/* KPI HEADER TILES — light, floating, striped */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:18px 0 0}
+.kpi-card{
+  background:#fff;border:1px solid var(--hair);border-radius:6px;
+  padding:16px 18px;position:relative;overflow:hidden;
+  box-shadow:var(--elev);
+}
+.kpi-row .kpi-card:nth-child(1)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--blue)}
+.kpi-row .kpi-card:nth-child(2)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--blue-bright)}
+.kpi-row .kpi-card:nth-child(3)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--orange)}
+.kpi-row .kpi-card:nth-child(4)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--teal)}
+.kpi-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray-mid);margin-bottom:7px}
+.kpi-value{font-family:var(--display);font-size:27px;font-weight:700;line-height:1;color:var(--ink);letter-spacing:-0.02em}
+.kpi-sub{font-size:10px;color:var(--gray-soft);margin-top:6px;letter-spacing:0.03em}
+
+/* Inner KPIs inside report bodies */
+.kpi-inner{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:4px}
+.kpi-inner-card{background:var(--off-white);border:1px solid var(--line-light);border-radius:4px;padding:11px 12px}
+.kpi-inner-card.green{border-left:3px solid var(--green);border-radius:0 4px 4px 0}
+.kpi-inner-card.red{border-left:3px solid var(--red);border-radius:0 4px 4px 0}
+.kpi-inner-card.amber{border-left:3px solid var(--orange);border-radius:0 4px 4px 0}
+.kpi-inner-card.sky{border-left:3px solid var(--blue);border-radius:0 4px 4px 0}
+.kpi-inner-card .kpi-eyebrow{font-size:8.5px;margin-bottom:4px}
+.kpi-inner-card .kpi-value{font-size:18px}
+.kpi-inner-card .kpi-sub{font-size:9.5px;margin-top:3px}
+
+/* REPORT CARDS — light, floating, two-column grid */
+.reports{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:18px 0 0}
+.report{
+  background:#fff;border:1px solid var(--hair);border-radius:6px;
+  box-shadow:var(--elev);overflow:hidden;display:flex;flex-direction:column;
+}
+.report.full{grid-column:1/-1}
+.report-head{padding:16px 20px 12px;border-bottom:1px solid var(--line-light)}
+.report-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--blue-deep);margin-bottom:5px}
+.report-title{font-family:var(--display);font-size:17px;color:var(--ink);font-weight:700;letter-spacing:-0.01em;margin-bottom:3px}
+.report-sub{font-size:11px;color:var(--gray-mid);line-height:1.5}
+.report-body{padding:18px 20px;flex:1;display:flex;flex-direction:column;gap:14px}
+.chart-wrap{position:relative;height:280px}
+.chart-wrap.tall{height:360px}
+
+/* MINI TABLES */
+.mini-table{font-size:11px;width:100%;border-collapse:collapse}
+.mini-table th{
+  text-align:left;padding:8px 10px;
+  background:var(--near-black);color:#fff;
+  font-family:var(--mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;font-weight:500;
+  border-bottom:2px solid var(--blue);
+}
+.mini-table td{padding:7px 10px;border-bottom:1px solid var(--line-light);color:var(--ink)}
+.mini-table tr:last-child td{border-bottom:none}
+.mini-table tr:hover td{background:var(--blue-soft)}
+.mini-table td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:10.5px}
+.mini-table td.muted{color:var(--gray-mid);font-size:10.5px}
+.empty-cell{padding:24px;text-align:center;color:var(--gray-mid);font-size:11px;font-style:italic}
+
+/* Override shared .foot padding for the rail layout */
+.foot{padding:22px 30px}
+
+@media(max-width:1000px){
+  .layout{flex-direction:column;padding-left:0}
+  .rail{
+    width:auto;height:auto;
+    position:static;overflow:visible;
+    border-right:none;
+    border-bottom:1px solid rgba(255,255,255,0.07);
+    padding:20px 24px;
+  }
+  .main{padding:0 24px 40px;width:100%}
+  .reports,.kpi-row{grid-template-columns:1fr}
+}
+
+/* ━━━ RAIL: divider + Custom Report button ━━━ */
+.rail-divider{height:1px;background:rgba(255,255,255,0.07);margin:22px 0 16px}
+.custom-rpt-btn{
+  width:100%;background:var(--orange);color:#241000;border:none;
+  padding:11px 14px;border-radius:4px;
+  font-family:var(--mono);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;font-weight:600;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:background 0.15s,transform 0.15s,box-shadow 0.15s;
+}
+.custom-rpt-btn:hover{background:var(--orange-bright);transform:translateY(-1px);box-shadow:0 6px 14px rgba(255,122,26,0.30)}
+.custom-rpt-hint{
+  font-family:var(--body);font-size:11px;color:#8a93a3;line-height:1.5;margin-top:9px;
+}
+
+/* ━━━ CUSTOM REPORT MODE — full takeover of main panel ━━━ */
+.main.custom-active .hero,
+.main.custom-active .kpi-row,
+.main.custom-active .reports{display:none}
+
+.custom-rpt-section{display:none;padding:24px 0 40px}
+.main.custom-active .custom-rpt-section{display:flex;flex-direction:column;min-height:calc(100vh - 120px)}
+
+.custom-rpt-head{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding-bottom:18px;border-bottom:1px solid var(--line-light);margin-bottom:18px;
+}
+.custom-rpt-titlewrap{display:flex;flex-direction:column;gap:4px}
+.custom-rpt-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:var(--orange-deep)}
+.custom-rpt-title{font-family:var(--display);font-size:26px;font-weight:700;color:var(--ink);letter-spacing:-0.02em}
+.custom-rpt-title em{color:var(--orange);font-style:normal}
+.custom-rpt-back{
+  background:transparent;border:1px solid var(--line-light);color:var(--ink);
+  padding:8px 14px;border-radius:4px;font-family:var(--mono);font-size:10px;
+  letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;
+  display:flex;align-items:center;gap:8px;
+  transition:border-color 0.15s,color 0.15s;
+}
+.custom-rpt-back:hover{border-color:var(--blue);color:var(--blue-deep)}
+
+.custom-rpt-filterchips{
+  font-family:var(--mono);font-size:10px;color:var(--gray-mid);
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;
+}
+.custom-rpt-filterchip{
+  background:var(--blue-tint);color:var(--blue-deep);
+  padding:4px 9px;border-radius:3px;letter-spacing:0.06em;
+}
+.custom-rpt-filterchip.empty{background:var(--off-white);color:var(--gray-soft)}
+
+.custom-rpt-body{flex:1;display:flex;flex-direction:column;background:#fff;border:1px solid var(--hair);border-radius:6px;box-shadow:var(--elev);overflow:hidden;min-height:520px}
+.custom-rpt-transcript{flex:1;overflow-y:auto;padding:22px 26px}
+.custom-rpt-transcript-inner{display:flex;flex-direction:column;gap:16px;max-width:980px;margin:0 auto}
+
+.crm-msg{display:flex;flex-direction:column;gap:5px}
+.crm-msg-role{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--gray-soft);text-transform:uppercase}
+.crm-bubble{padding:13px 16px;font-size:13.5px;line-height:1.6}
+.crm-bubble p{margin-bottom:0.7em}
+.crm-bubble p:last-child{margin-bottom:0}
+.crm-bubble strong{color:var(--ink);font-weight:600}
+.crm-bubble code{font-family:var(--mono);font-size:12px;background:var(--blue-soft);color:var(--blue-deep);padding:1px 6px;border-radius:3px}
+.crm-bubble ul,.crm-bubble ol{margin:0.4em 0 0.8em 1.5em}
+.crm-bubble li{margin-bottom:0.3em}
+
+.crm-msg.user{align-items:flex-end}
+.crm-msg.user .crm-msg-role{color:var(--orange-deep)}
+.crm-msg.user .crm-bubble{background:var(--orange);color:#241000;border-radius:12px 12px 3px 12px;max-width:72%}
+.crm-msg.assistant{align-items:flex-start}
+.crm-msg.assistant .crm-msg-role{color:var(--blue-deep)}
+.crm-msg.assistant .crm-bubble{background:#fff;color:var(--ink);border:1px solid var(--hair);border-left:3px solid var(--blue);border-radius:3px 12px 12px 3px;width:100%;box-shadow:0 1px 3px rgba(10,13,20,0.04)}
+.crm-msg.error .crm-msg-role{color:var(--red)}
+.crm-msg.error .crm-bubble{background:rgba(192,57,43,0.07);color:#8b291f;border:1px solid rgba(192,57,43,0.30);border-radius:6px;width:100%}
+
+/* Embedded chat-report — large, full-width inside the custom mode */
+.crm-bubble .chat-report{
+  margin:14px 0 4px;padding:18px 20px;
+  background:var(--off-white);border:1px solid var(--line-light);
+  border-left:3px solid var(--orange);border-radius:4px;
+}
+.crm-bubble .chat-report h3{font-family:var(--display);font-weight:700;font-size:18px;color:var(--ink);margin-bottom:8px;letter-spacing:-0.2px}
+.crm-bubble .chat-report .report-sub{font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-mid);margin-bottom:12px}
+.crm-bubble .chat-report table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+.crm-bubble .chat-report th{font-family:var(--mono);font-size:10px;letter-spacing:0.8px;text-transform:uppercase;text-align:left;padding:9px 12px;background:var(--near-black);color:#fff;border-bottom:2px solid var(--blue)}
+.crm-bubble .chat-report td{padding:8px 12px;border-bottom:1px solid var(--line-light)}
+.crm-bubble .chat-report tbody tr:hover{background:var(--blue-tint)}
+
+.crm-thinking .crm-bubble{
+  background:#fff;border:1px dashed var(--line-light);border-left:3px solid var(--blue);
+  color:var(--gray-soft);font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
+  text-transform:uppercase;display:inline-flex;align-items:center;gap:8px;padding:10px 14px;width:auto;
+}
+.crm-thinking .dot-spin{display:inline-block;width:9px;height:9px;border:2px solid var(--line-light);border-top-color:var(--blue);border-radius:50%;animation:chatSpin 0.7s linear infinite}
+@keyframes chatSpin{to{transform:rotate(360deg)}}
+
+.crm-sample-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.crm-sample-chip{
+  font-family:var(--body);font-size:12.5px;color:var(--ink);
+  background:#fff;border:1px solid var(--line-light);border-radius:18px;
+  padding:7px 14px;cursor:pointer;text-align:left;
+  transition:border-color 0.15s,background 0.15s;
+}
+.crm-sample-chip:hover{border-color:var(--blue);background:var(--blue-tint)}
+
+/* ━━━ MODE BAR (See data now / Request new report) ━━━ */
+.custom-rpt-modebar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;
+  padding:12px 14px;margin-bottom:14px;
+  background:var(--blue-tint);border:1px solid var(--line-light);border-radius:5px;
+}
+.custom-rpt-modepicker{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#fff}
+.custom-rpt-modepicker button{
+  appearance:none;border:none;background:transparent;cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;
+  padding:8px 14px;color:var(--gray-mid);
+  transition:background 0.15s,color 0.15s;
+}
+.custom-rpt-modepicker button:not(:last-child){border-right:1px solid var(--line)}
+.custom-rpt-modepicker button:hover{color:var(--ink)}
+.custom-rpt-modepicker button.active{background:var(--blue-deep);color:#fff}
+.custom-rpt-requester{display:flex;align-items:center;gap:9px;margin-left:auto}
+.custom-rpt-requester label{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--gray-mid);
+}
+.custom-rpt-requester select{
+  font-family:var(--body);font-size:12.5px;color:var(--ink);
+  padding:6px 10px;border:1px solid var(--line);border-radius:3px;background:#fff;
+  outline:none;cursor:pointer;
+}
+.custom-rpt-requester select:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+
+/* ━━━ SUBMISSION SUCCESS CARD ━━━ */
+.crm-submitted-card{
+  margin-top:6px;padding:18px 22px;
+  background:linear-gradient(135deg, rgba(30,63,214,0.06) 0%, rgba(0,180,188,0.08) 100%);
+  border:1px solid rgba(30,63,214,0.18);border-left:4px solid var(--blue);border-radius:6px;
+}
+.crm-submitted-card h4{
+  font-family:var(--display);font-size:16px;color:var(--ink);margin:0 0 6px;letter-spacing:-0.01em;
+}
+.crm-submitted-card p{font-size:13px;color:var(--gray-mid);margin:0 0 4px;line-height:1.55}
+.crm-submitted-card .req-id{
+  font-family:var(--mono);font-size:10.5px;color:var(--blue-deep);
+  background:#fff;padding:3px 7px;border-radius:3px;border:1px solid var(--line-light);
+  display:inline-block;margin-top:6px;letter-spacing:0.05em;
+}
+
+.custom-rpt-input-wrap{background:#fff;border-top:1px solid var(--line-light);padding:14px 26px;flex-shrink:0}
+.custom-rpt-input-inner{display:flex;gap:10px;align-items:flex-end;max-width:980px;margin:0 auto}
+.custom-rpt-input{
+  flex:1;font-family:var(--body);font-size:13.5px;color:var(--ink);
+  background:#fff;border:1px solid var(--line-light);border-radius:4px;
+  padding:11px 13px;outline:none;resize:none;
+  min-height:42px;max-height:160px;line-height:1.45;
+  transition:border-color 0.15s,box-shadow 0.15s;
+}
+.custom-rpt-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.custom-rpt-send{
+  background:var(--orange);color:#241000;border:none;
+  padding:11px 18px;font-family:var(--mono);font-size:10px;letter-spacing:0.16em;
+  text-transform:uppercase;font-weight:600;cursor:pointer;border-radius:4px;
+  transition:background 0.2s,transform 0.2s;white-space:nowrap;
+}
+.custom-rpt-send:hover:not(:disabled){background:var(--orange-bright);transform:translateY(-1px)}
+.custom-rpt-send:disabled{background:var(--gray-soft);color:#fff;cursor:not-allowed}
+
+/* ━━━ FLOATING CHAT WIDGET (Mode A — ambient questions about current dashboard) ━━━ */
+.chat-fab{
+  position:fixed;bottom:22px;right:22px;z-index:50;
+  background:var(--blue);color:#fff;border:none;
+  width:54px;height:54px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  box-shadow:0 8px 20px rgba(30,63,214,0.32);
+  transition:transform 0.18s,box-shadow 0.18s,background 0.18s;
+}
+.chat-fab:hover{background:var(--blue-bright);transform:translateY(-2px);box-shadow:0 12px 26px rgba(30,63,214,0.40)}
+.chat-fab svg{width:22px;height:22px}
+.chat-fab .badge{
+  position:absolute;top:-3px;right:-3px;background:var(--orange);color:#241000;
+  font-family:var(--mono);font-size:8px;letter-spacing:0.1em;
+  padding:2px 5px;border-radius:8px;font-weight:600;
+}
+
+.chat-fab-panel{
+  position:fixed;bottom:22px;right:22px;z-index:51;
+  width:400px;height:560px;max-height:calc(100vh - 90px);
+  background:#fff;border:1px solid var(--hair);border-radius:8px;
+  box-shadow:0 20px 50px rgba(10,13,20,0.20);
+  display:none;flex-direction:column;overflow:hidden;
+}
+.chat-fab-panel.open{display:flex}
+.chat-fab-header{
+  padding:13px 16px;background:#0e1320;color:#fff;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.chat-fab-header-title{font-family:var(--display);font-size:14px;font-weight:700;letter-spacing:-0.1px}
+.chat-fab-header-sub{font-family:var(--mono);font-size:9px;letter-spacing:0.16em;color:#9aa3b2;text-transform:uppercase;margin-top:2px}
+.chat-fab-close{
+  background:transparent;border:none;color:#9aa3b2;cursor:pointer;
+  font-size:20px;line-height:1;padding:4px 8px;border-radius:3px;
+  transition:color 0.15s,background 0.15s;
+}
+.chat-fab-close:hover{color:#fff;background:rgba(255,255,255,0.08)}
+.chat-fab-body{flex:1;overflow-y:auto;padding:14px 16px}
+.chat-fab-transcript{display:flex;flex-direction:column;gap:12px}
+
+.fab-msg{display:flex;flex-direction:column;gap:4px}
+.fab-msg-role{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--gray-soft);text-transform:uppercase}
+.fab-bubble{padding:9px 12px;font-size:12.5px;line-height:1.55}
+.fab-bubble p{margin-bottom:0.6em}
+.fab-bubble p:last-child{margin-bottom:0}
+.fab-bubble strong{color:var(--ink);font-weight:600}
+.fab-bubble code{font-family:var(--mono);font-size:11px;background:var(--blue-soft);color:var(--blue-deep);padding:1px 5px;border-radius:3px}
+.fab-msg.user{align-items:flex-end}
+.fab-msg.user .fab-msg-role{color:var(--orange-deep)}
+.fab-msg.user .fab-bubble{background:var(--orange);color:#241000;border-radius:9px 9px 2px 9px;max-width:86%}
+.fab-msg.assistant{align-items:flex-start}
+.fab-msg.assistant .fab-msg-role{color:var(--blue-deep)}
+.fab-msg.assistant .fab-bubble{background:var(--off-white);color:var(--ink);border:1px solid var(--line-light);border-left:3px solid var(--blue);border-radius:2px 9px 9px 2px;width:100%}
+.fab-msg.error .fab-msg-role{color:var(--red)}
+.fab-msg.error .fab-bubble{background:rgba(192,57,43,0.07);color:#8b291f;border:1px solid rgba(192,57,43,0.30);border-radius:5px;width:100%}
+.fab-bubble a.fab-link-custom-rpt{
+  color:var(--orange-deep);font-weight:600;
+  text-decoration:underline;text-decoration-color:rgba(255,122,26,0.5);
+  text-underline-offset:2px;cursor:pointer;
+  transition:color 0.15s,text-decoration-color 0.15s;
+}
+.fab-bubble a.fab-link-custom-rpt:hover{color:var(--orange);text-decoration-color:var(--orange)}
+.fab-bubble .chat-report{margin:8px 0 2px;padding:9px 11px;background:#fff;border:1px solid var(--line-light);border-left:3px solid var(--orange);border-radius:3px;font-size:11px}
+.fab-bubble .chat-report h3{font-family:var(--display);font-weight:700;font-size:12px;color:var(--ink);margin-bottom:5px}
+.fab-bubble .chat-report .report-sub{font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--gray-mid);margin-bottom:6px}
+.fab-bubble .chat-report table{width:100%;border-collapse:collapse;font-size:10.5px}
+.fab-bubble .chat-report th{font-family:var(--mono);font-size:9px;letter-spacing:0.6px;text-transform:uppercase;text-align:left;padding:5px 7px;background:var(--ink);color:#fff}
+.fab-bubble .chat-report td{padding:4px 7px;border-bottom:1px solid var(--line-light)}
+
+.fab-sample-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.fab-sample-chip{
+  font-family:var(--body);font-size:11px;line-height:1.3;color:var(--ink);
+  background:#fff;border:1px solid var(--line-light);border-radius:14px;
+  padding:5px 10px;cursor:pointer;text-align:left;
+  transition:border-color 0.15s,background 0.15s;
+}
+.fab-sample-chip:hover{border-color:var(--blue);background:var(--blue-tint)}
+
+.fab-thinking{align-items:flex-start}
+.fab-thinking .fab-bubble{
+  background:#fff;border:1px dashed var(--line-light);border-left:3px solid var(--blue);
+  color:var(--gray-soft);font-family:var(--mono);font-size:9px;letter-spacing:1.2px;
+  text-transform:uppercase;display:inline-flex;align-items:center;gap:8px;padding:7px 11px;width:auto;
+}
+.fab-thinking .dot-spin{display:inline-block;width:8px;height:8px;border:2px solid var(--line-light);border-top-color:var(--blue);border-radius:50%;animation:chatSpin 0.7s linear infinite}
+
+.chat-fab-input-wrap{padding:10px 14px;border-top:1px solid var(--line-light);flex-shrink:0}
+.chat-fab-input-inner{display:flex;gap:8px;align-items:flex-end}
+.chat-fab-input{
+  flex:1;font-family:var(--body);font-size:12.5px;color:var(--ink);
+  background:#fff;border:1px solid var(--line-light);border-radius:4px;
+  padding:8px 11px;outline:none;resize:none;min-height:36px;max-height:120px;line-height:1.45;
+}
+.chat-fab-input:focus{border-color:var(--blue)}
+.chat-fab-send{
+  background:var(--blue);color:#fff;border:none;
+  padding:9px 13px;font-family:var(--mono);font-size:9px;letter-spacing:0.14em;
+  text-transform:uppercase;font-weight:500;cursor:pointer;border-radius:4px;
+}
+.chat-fab-send:hover:not(:disabled){background:var(--blue-bright)}
+.chat-fab-send:disabled{background:var(--gray-soft);cursor:not-allowed}
+
+/* Mobile: widget becomes near-fullscreen */
+@media(max-width:700px){
+  .chat-fab-panel{
+    left:12px;right:12px;bottom:12px;width:auto;height:calc(100vh - 90px);
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Historical Analytics</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool · Live database</div>
+    <div class="gate-input-wrap"><input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()"></div>
+    <div class="gate-input-wrap"><input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"></div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <a class="nav-link active" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn ghost" onclick="refreshAll()">Refresh</button>
+    <button class="btn ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</nav>
+
+<div class="layout">
+  <main class="main" id="mainPanel">
+
+    <!-- ===== CUSTOM REPORT MODE (hidden unless main has class custom-active) ===== -->
+    <section class="custom-rpt-section" id="customRptSection">
+      <div class="custom-rpt-head">
+        <div class="custom-rpt-titlewrap">
+          <div class="custom-rpt-eyebrow">Generate</div>
+          <div class="custom-rpt-title">Custom <em>Report</em></div>
+        </div>
+        <button class="custom-rpt-back" onclick="exitCustomReportMode()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><polyline points="15 18 9 12 15 6"/></svg>
+          Back to dashboard
+        </button>
+      </div>
+
+      <div class="custom-rpt-modebar">
+        <div class="custom-rpt-modepicker" role="tablist">
+          <button id="modeBtnNow"     class="active" onclick="switchCustomRptMode('now')">See data now</button>
+          <button id="modeBtnRequest"                onclick="switchCustomRptMode('request')">Request new report</button>
+        </div>
+        <div class="custom-rpt-requester" id="customRptRequester" style="display:none">
+          <label for="requesterPicker">Submitting as</label>
+          <select id="requesterPicker" onchange="onRequesterChange()"></select>
+        </div>
+      </div>
+
+      <div class="custom-rpt-filterchips" id="customRptFilterChips">
+        <span class="custom-rpt-filterchip empty">No filters active</span>
+      </div>
+
+      <div class="custom-rpt-body">
+        <div class="custom-rpt-transcript" id="customRptTranscript">
+          <div class="custom-rpt-transcript-inner" id="customRptTranscriptInner"></div>
+        </div>
+        <div class="custom-rpt-input-wrap">
+          <div class="custom-rpt-input-inner">
+            <textarea class="custom-rpt-input" id="customRptInput" placeholder="Describe the report you want…" rows="1"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCustomRptMessage();}"
+              oninput="customRptAutoResize(this)"></textarea>
+            <button class="custom-rpt-send" id="customRptSend" onclick="sendCustomRptMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hero">
+      <div class="hero-eyebrow">Marketing Ops · Closed-Loop Performance · F24 → F26</div>
+      <h1 class="hero-title">Historical <em>Analytics</em><span class="demo-tag">Demo</span></h1>
+      <p class="hero-sub">Workflow, ordering, spend, and cancellation patterns across F24 / F25 / F26 programs. Foundation for Module 4 — Closed-Loop Performance Intelligence.</p>
+    </section>
+
+    <section class="kpi-row" id="headerKpis">
+      <div class="kpi-card"><div class="kpi-eyebrow">Items</div><div class="kpi-value" id="hdr-items">—</div><div class="kpi-sub" id="hdr-items-sub">program items</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Brands</div><div class="kpi-value" id="hdr-brands">—</div><div class="kpi-sub" id="hdr-brands-sub">in filter</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Actual Spend</div><div class="kpi-value" id="hdr-spend">—</div><div class="kpi-sub" id="hdr-spend-sub">final production</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Cancel + POD Rate</div><div class="kpi-value" id="hdr-cancel">—</div><div class="kpi-sub" id="hdr-cancel-sub">of resolved items</div></div>
+    </section>
+
+    <div class="reports">
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 01 · Workflow &amp; Ordering</div>
+          <div class="report-title">Program Funnel — Commitment to Final Outcome</div>
+          <div class="report-sub">Distribution of program-included items across their final status, side-by-side by fiscal year.</div>
+        </div>
+        <div class="report-body">
+          <div class="kpi-inner" id="kpi-funnel"></div>
+          <div class="chart-wrap tall"><canvas id="chartFunnel"></canvas></div>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 02 · Cancellations</div>
+          <div class="report-title">Cancellation Deep-Dive</div>
+          <div class="report-sub">True cancels vs POD swaps by brand. Dollar exposure at the top.</div>
+        </div>
+        <div class="report-body">
+          <div class="kpi-inner" id="kpi-cancel"></div>
+          <div class="chart-wrap"><canvas id="chartCancelByBrand"></canvas></div>
+          <table class="mini-table" id="tblTopCancelTypes"><thead><tr><th>Item Type</th><th>True Cancel</th><th>POD Swap</th><th class="num">Spend at Risk</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 03 · Spend Over Time</div>
+          <div class="report-title">Budget vs. Actual by Year</div>
+          <div class="report-sub">Comparable basis: Approved items with both revised budget and final production spend (cancelled / removed / POD / inventory items excluded — see Report 02 for those).</div>
+        </div>
+        <div class="report-body">
+          <div class="kpi-inner" id="kpi-spend"></div>
+          <div class="chart-wrap"><canvas id="chartSpendOverTime"></canvas></div>
+          <table class="mini-table" id="tblSpendByCategory"><thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Δ</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 04 · Brand Spend</div>
+          <div class="report-title">Spend by Brand — Year over Year</div>
+          <div class="report-sub">Actual production spend per brand, split by fiscal year. Top 15 brands by total actual.</div>
+        </div>
+        <div class="report-body">
+          <div class="chart-wrap" style="height:560px"><canvas id="chartSpendByBrand"></canvas></div>
+          <table class="mini-table" id="tblBrandDetail"><thead><tr><th>Brand</th><th>Cat</th><th>Items</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th>Cancel Rate</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 05 · Vendor Patterns</div>
+          <div class="report-title">Vendor Sourcing &amp; Reliability</div>
+          <div class="report-sub">Volume, spend, POD-swap rate by vendor.</div>
+        </div>
+        <div class="report-body">
+          <div class="chart-wrap"><canvas id="chartVendor"></canvas></div>
+          <table class="mini-table" id="tblVendor"><thead><tr><th>Vendor</th><th>Items</th><th class="num">Actual Spend</th><th>POD Swap %</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 06 · Item Mix</div>
+          <div class="report-title">Item Type &amp; Spec Mix</div>
+          <div class="report-sub">By item type, Standard/Custom and New/Rerun splits.</div>
+        </div>
+        <div class="report-body">
+          <div class="kpi-inner" id="kpi-mix"></div>
+          <div class="chart-wrap"><canvas id="chartItemType"></canvas></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <aside class="rail">
+    <div class="rail-eyebrow">Controls</div>
+    <div class="rail-title">Filters</div>
+    <div class="filter-group">
+      <label class="filter-lbl">Fiscal Year</label>
+      <div class="seg" id="fYear">
+        <button class="active" data-val="">All</button>
+        <button data-val="F24">F24</button>
+        <button data-val="F25">F25</button>
+        <button data-val="F26">F26</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Brand</label>
+      <select class="filter-select" id="fBrand"><option value="">All brands</option></select>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Category</label>
+      <div class="seg" id="fCategory">
+        <button class="active" data-val="">All</button>
+        <button data-val="display">Display</button>
+        <button data-val="paper">Paper</button>
+        <button data-val="premium">Premium</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Season</label>
+      <div class="seg" id="fWave">
+        <button class="active" data-val="">All</button>
+        <button data-val="SM">Summer</button>
+        <button data-val="HL">Holiday</button>
+        <button data-val="SP">Spring</button>
+      </div>
+    </div>
+    <button class="filter-reset" onclick="resetFilters()">Reset</button>
+
+    <button class="custom-rpt-btn" onclick="enterCustomReportMode()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
+      Custom Report
+    </button>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>Historical Analytics</em> · Demo</div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+<!-- ===== FLOATING CHAT WIDGET (Mode A) ===== -->
+<button class="chat-fab" id="chatFab" onclick="toggleFabPanel()" title="Ask about this dashboard" aria-label="Open chat">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+</button>
+
+<aside class="chat-fab-panel" id="chatFabPanel" aria-hidden="true">
+  <div class="chat-fab-header">
+    <div class="chat-fab-header-title">Ask AI</div>
+    <button class="chat-fab-close" onclick="toggleFabPanel()" aria-label="Close">×</button>
+  </div>
+  <div class="chat-fab-body" id="chatFabBody">
+    <div class="chat-fab-transcript" id="chatFabTranscript"></div>
+  </div>
+  <div class="chat-fab-input-wrap">
+    <div class="chat-fab-input-inner">
+      <textarea class="chat-fab-input" id="chatFabInput" placeholder="Ask about the current view…" rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendFabMessage();}"
+        oninput="fabAutoResize(this)"></textarea>
+      <button class="chat-fab-send" id="chatFabSend" onclick="sendFabMessage()">Send</button>
+    </div>
+  </div>
+</aside>
+
+</div>
+
+<script>
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;"><h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const SUPABASE_URL  = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON = window.APP_CONFIG.SUPABASE_ANON;
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ── CHART.JS DEFAULTS — blue/orange palette ──
+Chart.defaults.font.family = 'DM Mono';
+Chart.defaults.font.size = 10;
+Chart.defaults.color = '#6c7682';
+
+const state = { outcomes:[], funnel:[], brandSeason:[], vendorSeason:[], cancelByDim:[],
+  filters:{ years:[], brand:'', category:'', wave:'' }, charts:{} };
+
+const COLORS = {
+  approved:'#1E3FD6',
+  inventory_fulfilled:'#4E6BFF',
+  cancel_cancelled:'#C0392B',
+  cancel_pod:'#FF7A1A',
+  removed_prebuy:'#C75200',
+  pod_prebuy:'#FF9440',
+  abc_merch_prebuy:'#7A5AF8',
+  in_flight_requoting:'#8b94a0',
+  requoting:'#8b94a0',
+  no_outcome:'#d8dee6',
+  part_of_kit:'#14A8AD',
+  unknown:'#aaa',
+};
+const OUTCOME_LABEL = {
+  approved:'Approved', inventory_fulfilled:'Inventory fulfilled',
+  cancel_cancelled:'Cancel', cancel_pod:'Cancel → POD',
+  removed_prebuy:'Removed at program', pod_prebuy:'POD at program',
+  abc_merch_prebuy:'ABC Merch', in_flight_requoting:'In flight (requoting)',
+  requoting:'Requoting', no_outcome:'No final yet',
+  part_of_kit:'Part of a kit', unknown:'Unknown',
+};
+
+// ─── AUTH ───
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const errorEl = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { errorEl.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  errorEl.textContent = '';
+  const { data, error: authError } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (authError) {
+    document.getElementById('gateInput').classList.add('error');
+    errorEl.textContent = authError.message.includes('Invalid') ? 'Wrong email or password' : authError.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  loadAll();
+}
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+// ─── DATA ───
+// PostgREST default caps a single response at ~1000 rows. v_item_outcomes is the
+// only view that crosses that threshold (1 row per toolkit_item), so it has to
+// be paginated via .range(). The other four views are aggregates and stay small.
+async function fetchAllRows(viewName) {
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from(viewName).select('*').range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return all;
+}
+
+async function loadAll() {
+  document.getElementById('dbStatus').textContent = 'Loading…';
+  try {
+    const [outcomes, r2, r3, r4, r5] = await Promise.all([
+      fetchAllRows('v_item_outcomes'),
+      sb.from('v_prebuy_funnel').select('*'),
+      sb.from('v_spend_by_brand_season').select('*'),
+      sb.from('v_spend_by_vendor_season').select('*'),
+      sb.from('v_cancellation_by_dimension').select('*'),
+    ]);
+    const err = [r2,r3,r4,r5].find(r => r.error);
+    if (err) throw err.error;
+    state.outcomes = outcomes;
+    state.funnel = r2.data || []; state.brandSeason = r3.data || [];
+    state.vendorSeason = r4.data || []; state.cancelByDim = r5.data || [];
+    populateBrandFilter(); wireSegments();
+    document.getElementById('dbStatus').textContent = 'Live';
+    renderAll();
+  } catch (e) {
+    console.error(e);
+    document.getElementById('dbStatus').textContent = 'Error';
+  }
+}
+async function refreshAll() {
+  for (const k of Object.keys(state.charts)) { try { state.charts[k]?.destroy(); } catch(_){} }
+  state.charts = {};
+  await loadAll();
+}
+function populateBrandFilter() {
+  const brands = [...new Set(state.outcomes.map(r => r.brand_name).filter(Boolean))].sort();
+  const sel = document.getElementById('fBrand');
+  sel.innerHTML = '<option value="">All brands</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+  sel.onchange = () => { state.filters.brand = sel.value; renderAll(); };
+}
+function wireSegments() {
+  const wire = (id, key, multi) => {
+    const btns = document.querySelectorAll(`#${id} button`);
+    const allBtn = [...btns].find(x => x.dataset.val === '');
+    btns.forEach(b => b.onclick = () => {
+      if (multi) {
+        if (b.dataset.val === '') {
+          // Clicking "All" → activate only All, clear specific selections
+          btns.forEach(x => x.classList.remove('active'));
+          b.classList.add('active');
+        } else {
+          // Clicking a specific value → deactivate "All" first if it was active
+          if (allBtn) allBtn.classList.remove('active');
+          if (b.classList.contains('active')) {
+            if (document.querySelectorAll(`#${id} button.active`).length > 1) b.classList.remove('active');
+          } else b.classList.add('active');
+          // Fallback: nothing active → re-activate "All"
+          if (!document.querySelectorAll(`#${id} button.active`).length && allBtn) allBtn.classList.add('active');
+        }
+        const activeBtns = [...document.querySelectorAll(`#${id} button.active`)];
+        const allActive = activeBtns.some(x => x.dataset.val === '');
+        state.filters[key] = allActive ? [] : activeBtns.map(x => x.dataset.val);
+      } else {
+        btns.forEach(x => x.classList.remove('active')); b.classList.add('active');
+        state.filters[key] = b.dataset.val;
+      }
+      renderAll();
+    });
+  };
+  wire('fYear','years',true); wire('fCategory','category',false); wire('fWave','wave',false);
+}
+function resetFilters() {
+  state.filters = { years:[], brand:'', category:'', wave:'' };
+  document.querySelectorAll('#fYear button').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+  document.querySelectorAll('#fCategory button').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+  document.querySelectorAll('#fWave button').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+  document.getElementById('fBrand').value = '';
+  renderAll();
+}
+function matchesFilter(row) {
+  const f = state.filters;
+  if (f.years.length && !f.years.includes(row.fiscal_year)) return false;
+  if (f.brand && row.brand_name !== f.brand) return false;
+  if (f.category && row.item_category !== f.category) return false;
+  if (f.wave && row.buy_wave !== f.wave) return false;
+  return true;
+}
+const fmt$ = n => {
+  if (n == null) return '—';
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1000000) return sign + '$' + (a/1000000).toFixed(2) + 'M';
+  if (a >= 1000)    return sign + '$' + (a/1000).toFixed(0) + 'K';
+  return sign + '$' + Math.round(a);
+};
+const fmtN = n => n == null ? '—' : Number(n).toLocaleString();
+const fmtPct = n => (n == null || isNaN(n)) ? '—' : (n*100).toFixed(1) + '%';
+
+function renderAll() {
+  const items = state.outcomes.filter(matchesFilter);
+  renderHeaderKpis(items);
+  renderFunnel(items); renderCancellations(items); renderSpendOverTime(items);
+  renderSpendByBrand(items); renderVendor(items); renderItemTypeMix(items);
+}
+
+function renderHeaderKpis(items) {
+  const brands = new Set(items.map(r => r.brand_name).filter(Boolean));
+  const totalActual = items.reduce((s,r) => s + Number(r.final_production_spend || 0), 0);
+  const considered = items.filter(r => r.pre_buy_status === 'include' && ['approved','inventory_fulfilled','cancel_cancelled','cancel_pod'].includes(r.final_outcome));
+  const cancelled = considered.filter(r => ['cancel_cancelled','cancel_pod'].includes(r.final_outcome));
+  const cancelRate = considered.length ? cancelled.length / considered.length : null;
+  document.getElementById('hdr-items').textContent  = fmtN(items.length);
+  document.getElementById('hdr-brands').textContent = fmtN(brands.size);
+  document.getElementById('hdr-spend').textContent  = fmt$(totalActual);
+  document.getElementById('hdr-cancel').textContent = cancelRate == null ? '—' : fmtPct(cancelRate);
+}
+
+function renderFunnel(items) {
+  const years = [...new Set(items.map(r => r.fiscal_year))].sort();
+  const outcomes = ['approved','inventory_fulfilled','in_flight_requoting','no_outcome','cancel_cancelled','cancel_pod','removed_prebuy','pod_prebuy','abc_merch_prebuy','part_of_kit'];
+  const grid = {};
+  items.forEach(r => { grid[r.fiscal_year] = grid[r.fiscal_year] || {}; grid[r.fiscal_year][r.final_outcome] = (grid[r.fiscal_year][r.final_outcome] || 0) + 1; });
+  const incPool = items.filter(r => r.pre_buy_status === 'include');
+  const incl = incPool.length;
+  const approved = incPool.filter(r => ['approved','inventory_fulfilled'].includes(r.final_outcome)).length;
+  const considered = incPool.filter(r => ['approved','inventory_fulfilled','cancel_cancelled','cancel_pod'].includes(r.final_outcome)).length;
+  const cancels = incPool.filter(r => ['cancel_cancelled','cancel_pod'].includes(r.final_outcome)).length;
+  const inFlight = incPool.filter(r => ['in_flight_requoting','no_outcome'].includes(r.final_outcome)).length;
+  document.getElementById('kpi-funnel').innerHTML =
+      ikpi('Program included', fmtN(incl), '', 'sky')
+    + ikpi('Approval rate', considered ? fmtPct(approved/considered) : '—', `${approved} of ${considered}`, 'green')
+    + ikpi('Cancel + POD', considered ? fmtPct(cancels/considered) : '—', `${cancels} of ${considered}`, 'red')
+    + ikpi('In flight', fmtN(inFlight), 'no final yet', 'amber');
+  const datasets = outcomes.map(out => ({
+    label: OUTCOME_LABEL[out] || out,
+    data: years.map(y => grid[y]?.[out] || 0),
+    backgroundColor: COLORS[out] || '#999', stack:'a',
+  }));
+  const grandTotal = datasets.reduce((s, ds) => s + ds.data.reduce((a,b) => a + (b || 0), 0), 0);
+  const funnelOpts = opts({ stacked:true, legend:'right' });
+  // Show each segment's share of the grand total across all years.
+  funnelOpts.plugins.tooltip = {
+    callbacks: {
+      label: ctx => {
+        const v = ctx.parsed.y;
+        const pct = grandTotal ? (v / grandTotal * 100) : 0;
+        return `${ctx.dataset.label}: ${v} (${pct.toFixed(1)}% of total)`;
+      }
+    }
+  };
+  drawChart('chartFunnel', { type:'bar', data:{ labels:years, datasets }, options: funnelOpts });
+}
+
+function renderCancellations(items) {
+  const cancels = items.filter(r => ['cancel_cancelled','cancel_pod','removed_prebuy','pod_prebuy'].includes(r.final_outcome));
+  const trueCancels = items.filter(r => r.final_outcome === 'cancel_cancelled').length;
+  const podSwaps = items.filter(r => r.final_outcome === 'cancel_pod').length;
+  const removed = items.filter(r => r.final_outcome === 'removed_prebuy').length;
+  const cancelSpend = cancels.reduce((s,r) => s + Number(r.final_production_spend || 0) + Number(r.budget_spend || 0), 0);
+  document.getElementById('kpi-cancel').innerHTML =
+      ikpi('True cancels', fmtN(trueCancels), 'final = Cancel', 'red')
+    + ikpi('POD swaps', fmtN(podSwaps), 'moved to POD', 'amber')
+    + ikpi('Removed at program', fmtN(removed), 'never produced', 'red')
+    + ikpi('Exposure', fmt$(cancelSpend), 'cancelled $', 'red');
+  const byBrand = {};
+  cancels.forEach(r => {
+    const b = r.brand_name || '—';
+    byBrand[b] = byBrand[b] || { true_cancel:0, pod_swap:0, removed:0 };
+    if (r.final_outcome === 'cancel_cancelled') byBrand[b].true_cancel++;
+    else if (r.final_outcome === 'cancel_pod')  byBrand[b].pod_swap++;
+    else byBrand[b].removed++;
+  });
+  const sorted = Object.entries(byBrand).map(([k,v]) => ({ brand:k, ...v, total: v.true_cancel + v.pod_swap + v.removed })).sort((a,b) => b.total - a.total).slice(0, 10);
+  drawChart('chartCancelByBrand', {
+    type:'bar',
+    data:{ labels: sorted.map(r => r.brand),
+      datasets:[
+        { label:'True cancel', data: sorted.map(r => r.true_cancel), backgroundColor: COLORS.cancel_cancelled, stack:'a' },
+        { label:'POD swap',    data: sorted.map(r => r.pod_swap),    backgroundColor: COLORS.cancel_pod, stack:'a' },
+        { label:'Removed',     data: sorted.map(r => r.removed),     backgroundColor: COLORS.removed_prebuy, stack:'a' },
+      ]
+    },
+    options: opts({ stacked:true, legend:'top', xRotate:35 })
+  });
+  const byType = {};
+  cancels.forEach(r => {
+    const t = r.item_type || '—';
+    byType[t] = byType[t] || { true_cancel:0, pod_swap:0, spend:0 };
+    if (r.final_outcome === 'cancel_cancelled') byType[t].true_cancel++;
+    else if (r.final_outcome === 'cancel_pod') byType[t].pod_swap++;
+    byType[t].spend += Number(r.final_production_spend || 0) + Number(r.budget_spend || 0);
+  });
+  const typeRows = Object.entries(byType).map(([k,v]) => ({ type:k, ...v, total: v.true_cancel + v.pod_swap })).sort((a,b) => b.total - a.total).slice(0, 6);
+  const tbody = document.querySelector('#tblTopCancelTypes tbody');
+  tbody.innerHTML = typeRows.length
+    ? typeRows.map(r => `<tr><td>${r.type}</td><td class="num">${r.true_cancel}</td><td class="num">${r.pod_swap}</td><td class="num">${fmt$(r.spend)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty-cell">No cancellations in current filter.</td></tr>';
+}
+
+function renderSpendOverTime(items) {
+  const years = [...new Set(items.map(r => r.fiscal_year))].sort();
+  const cats = ['paper','display','premium'];
+  const byYearCat = {};
+  // Comparable basis only: Approved items with BOTH revised budget and final
+  // production spend present. Cancel / Removed / POD / Inventory items have
+  // their own buckets and would distort variance if summed in. See
+  // prompts/domain-glossary.md §13 A4.
+  const comparable = items.filter(r =>
+    r.final_outcome === 'approved'
+    && r.budget_spend != null
+    && r.final_production_spend != null
+  );
+  comparable.forEach(r => {
+    byYearCat[r.fiscal_year] = byYearCat[r.fiscal_year] || {};
+    byYearCat[r.fiscal_year][r.item_category] = byYearCat[r.fiscal_year][r.item_category] || { budget:0, actual:0 };
+    byYearCat[r.fiscal_year][r.item_category].budget += Number(r.budget_spend || 0);
+    byYearCat[r.fiscal_year][r.item_category].actual += Number(r.final_production_spend || 0);
+  });
+  const budgetSum = years.map(y => cats.reduce((s,c) => s + (byYearCat[y]?.[c]?.budget || 0), 0));
+  const actualSum = years.map(y => cats.reduce((s,c) => s + (byYearCat[y]?.[c]?.actual || 0), 0));
+  const variance = years.map((y,i) => actualSum[i] - budgetSum[i]);
+  const totalBudget = budgetSum.reduce((a,b)=>a+b,0);
+  const totalActual = actualSum.reduce((a,b)=>a+b,0);
+  const totalVariance = totalActual - totalBudget;
+  const variancePct = totalBudget ? (totalVariance / totalBudget * 100).toFixed(1) + '%' : '—';
+  document.getElementById('kpi-spend').innerHTML =
+      ikpi('Budget', fmt$(totalBudget), `${comparable.length} Approved items`, 'sky')
+    + ikpi('Actual', fmt$(totalActual), 'final production', 'green')
+    + ikpi('Variance', fmt$(totalVariance), `${totalVariance >= 0 ? '+' : ''}${variancePct} · actual − budget`, totalVariance > 0 ? 'red' : 'green');
+  drawChart('chartSpendOverTime', {
+    type:'bar',
+    data:{ labels: years, datasets:[
+      { label:'Budget', data: budgetSum, backgroundColor: '#d8dee6' },
+      { label:'Actual', data: actualSum, backgroundColor: COLORS.approved },
+    ]},
+    options: opts({ legend:'top', currency:true })
+  });
+  const tbody = document.querySelector('#tblSpendByCategory tbody');
+  tbody.innerHTML = cats.map(c => {
+    const b = years.reduce((s,y) => s + (byYearCat[y]?.[c]?.budget || 0), 0);
+    const a = years.reduce((s,y) => s + (byYearCat[y]?.[c]?.actual || 0), 0);
+    return `<tr><td>${c}</td><td class="num">${fmt$(b)}</td><td class="num">${fmt$(a)}</td><td class="num">${fmt$(a-b)}</td></tr>`;
+  }).join('');
+}
+
+function renderSpendByBrand(items) {
+  const byBrand = {};
+  items.forEach(r => {
+    const b = r.brand_name || '—';
+    byBrand[b] = byBrand[b] || { cat:r.brand_category, items:0, budget:0, actual:0, cancels:0, considered:0, actualByYear:{} };
+    byBrand[b].items++;
+    byBrand[b].budget += Number(r.budget_spend || 0);
+    byBrand[b].actual += Number(r.final_production_spend || 0);
+    byBrand[b].actualByYear[r.fiscal_year] = (byBrand[b].actualByYear[r.fiscal_year] || 0) + Number(r.final_production_spend || 0);
+    if (['approved','inventory_fulfilled','cancel_cancelled','cancel_pod'].includes(r.final_outcome)) byBrand[b].considered++;
+    if (['cancel_cancelled','cancel_pod'].includes(r.final_outcome)) byBrand[b].cancels++;
+  });
+  const sorted = Object.entries(byBrand).map(([k,v]) => ({ brand:k, ...v, variance: v.actual - v.budget, cancelRate: v.considered ? v.cancels/v.considered : null })).sort((a,b) => b.actual - a.actual);
+  const top = sorted.slice(0, 15);
+  const years = [...new Set(items.map(r => r.fiscal_year).filter(Boolean))].sort();
+  const YEAR_COLORS = { F24:'#9CB2D8', F25:'#1E3FD6', F26:'#FF7A1A', F27:'#14A8AD' };
+  drawChart('chartSpendByBrand', {
+    type:'bar',
+    data:{ labels: top.map(r => r.brand), datasets: years.map(y => ({
+      label: y,
+      data: top.map(r => r.actualByYear[y] || 0),
+      backgroundColor: YEAR_COLORS[y] || '#8b94a0',
+      categoryPercentage: 0.85,  // fill more of the per-brand slot
+      barPercentage: 0.95,       // and let each FY bar fill its sub-slot
+    }))},
+    options: opts({ horizontal:true, legend:'top', currency:true })
+  });
+  const tbody = document.querySelector('#tblBrandDetail tbody');
+  tbody.innerHTML = sorted.length
+    ? sorted.map(r => `<tr><td>${r.brand}</td><td class="muted">${r.cat || '—'}</td><td class="num">${fmtN(r.items)}</td><td class="num">${fmt$(r.budget)}</td><td class="num">${fmt$(r.actual)}</td><td class="num">${fmt$(r.variance)}</td><td class="num">${r.considered ? fmtPct(r.cancelRate) : '—'}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-cell">No brands in current filter.</td></tr>';
+}
+
+function renderVendor(items) {
+  const byVendor = {};
+  items.forEach(r => {
+    if (!r.vendor_name) return;
+    const v = r.vendor_name;
+    byVendor[v] = byVendor[v] || { items:0, actual:0, podSwap:0, finalCount:0 };
+    byVendor[v].items++; byVendor[v].actual += Number(r.final_production_spend || 0);
+    if (['approved','inventory_fulfilled','cancel_cancelled','cancel_pod'].includes(r.final_outcome)) byVendor[v].finalCount++;
+    if (r.final_outcome === 'cancel_pod') byVendor[v].podSwap++;
+  });
+  const sorted = Object.entries(byVendor).map(([k,v]) => ({ vendor:k, ...v, podRate: v.finalCount ? v.podSwap/v.finalCount : null })).sort((a,b) => b.actual - a.actual);
+  drawChart('chartVendor', {
+    type:'bar',
+    data:{ labels: sorted.map(r => r.vendor), datasets:[ { label:'Items', data: sorted.map(r => r.items), backgroundColor: COLORS.part_of_kit } ] },
+    options: opts({ legend:'none' })
+  });
+  const tbody = document.querySelector('#tblVendor tbody');
+  tbody.innerHTML = sorted.length
+    ? sorted.map(r => `<tr><td>${r.vendor}</td><td class="num">${fmtN(r.items)}</td><td class="num">${fmt$(r.actual)}</td><td class="num">${r.finalCount ? fmtPct(r.podRate) : '—'}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty-cell">No vendors in current filter.</td></tr>';
+}
+
+function renderItemTypeMix(items) {
+  const std = items.filter(r => /standard/i.test(r.standard_or_custom || '')).length;
+  const custom = items.filter(r => /custom/i.test(r.standard_or_custom || '')).length;
+  const isNew = items.filter(r => /new/i.test(r.new_or_rerun || '')).length;
+  const rerun = items.filter(r => /rerun/i.test(r.new_or_rerun || '')).length;
+  const d1 = std + custom; const d2 = isNew + rerun;
+  document.getElementById('kpi-mix').innerHTML =
+      ikpi('Standard', fmtN(std), d1 ? fmtPct(std/d1) : '', 'sky')
+    + ikpi('Custom', fmtN(custom), d1 ? fmtPct(custom/d1) : '', 'amber')
+    + ikpi('New', fmtN(isNew), d2 ? fmtPct(isNew/d2) : '', 'sky')
+    + ikpi('Rerun', fmtN(rerun), d2 ? fmtPct(rerun/d2) : '', 'green');
+  const byType = {};
+  items.forEach(r => { const t = r.item_type || '—'; byType[t] = (byType[t]||0)+1; });
+  const sorted = Object.entries(byType).sort((a,b) => b[1]-a[1]).slice(0, 10);
+  drawChart('chartItemType', {
+    type:'bar',
+    data:{ labels: sorted.map(r => r[0]), datasets:[{ label:'Items', data: sorted.map(r => r[1]), backgroundColor: COLORS.approved }] },
+    options: opts({ horizontal:true, legend:'none' })
+  });
+}
+
+function ikpi(label, value, sub, tone) {
+  return `<div class="kpi-inner-card ${tone||''}"><div class="kpi-eyebrow">${label}</div><div class="kpi-value">${value}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}</div>`;
+}
+
+function opts({ stacked=false, legend='top', horizontal=false, xRotate=0, currency=false } = {}) {
+  const tickCb = currency ? { callback: v => fmt$(v) } : {};
+  const tick = '#4c545e', label = '#0a0d14', grid = 'rgba(10,13,20,0.07)';
+  return {
+    indexAxis: horizontal ? 'y' : 'x',
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: legend === 'none' ? { display:false } : { position: legend, align: legend==='top'?'end':'center', labels:{ font:{family:'DM Mono',size:10}, color:tick, boxWidth:10, padding:14 } },
+      tooltip: { callbacks: currency ? { label: ctx => `${ctx.dataset.label}: ${fmt$(ctx.parsed[horizontal?'x':'y'])}` } : {} }
+    },
+    scales: {
+      x: { stacked, ticks: horizontal ? { font:{family:'DM Mono',size:10},color:tick,...tickCb } : { font:{family:'DM Mono',size:10},color:label,maxRotation:xRotate,minRotation:xRotate }, grid:{color:grid} },
+      y: { stacked, ticks: horizontal ? { font:{family:'DM Mono',size:10},color:label } : { font:{family:'DM Mono',size:10},color:tick,...tickCb }, grid:{color:grid} }
+    }
+  };
+}
+function drawChart(id, cfg) {
+  if (state.charts[id]) state.charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  state.charts[id] = new Chart(ctx, cfg);
+}
+
+// ============================================================
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CHAT — shared session, filter prefix, Custom Report mode + floating widget
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ============================================================
+// Two separate session_ids so the floating widget and Custom Report don't share memory.
+// Widget: persistent across reloads in the same tab (sessionStorage).
+// Custom Report: regenerated each time enterCustomReportMode() runs — a fresh report
+//   is always a fresh conversation, never inheriting from the widget or a prior report.
+const CHAT_SESSION_KEY = 'chat_session_id';
+function chatGetWidgetSessionId() {
+  let id = sessionStorage.getItem(CHAT_SESSION_KEY);
+  if (!id) { id = crypto.randomUUID(); sessionStorage.setItem(CHAT_SESSION_KEY, id); }
+  return id;
+}
+let CHAT_SESSION_ID_WIDGET = chatGetWidgetSessionId();
+let CHAT_SESSION_ID_CUSTOM_RPT = null;
+
+// Starter questions shown as clickable chips in BOTH the widget greeting
+// and the Custom Report 'now' greeting. Same prompts in both surfaces by
+// design — the user can click the same question in each to compare the
+// two answer styles (tight prose vs full report). Keep this in sync with
+// prompts/chat-agent.md → "Handling meta / orientation questions" so the
+// agent's verbal suggestions match what's on screen.
+const STARTER_QUESTIONS = [
+  "What item category has the highest cancellation rate historically?",
+  "How does budget vs. actual spend compare for F26?",
+  "What are the top 5 brands by Spend in F26 vs F25?",
+  "What brand has the highest cancellation rate?",
+  "Which buy season has the highest cancel rate — Holiday, Spring, or Summer?",
+];
+
+// Starter REPORT REQUESTS shown as clickable chips in the Custom Report
+// 'request' mode greeting (the surface that queues a request for admin to
+// build async, not the live agent). Distinct from STARTER_QUESTIONS — these
+// are deliverable asks, not single-Q data lookups: each implies a polished,
+// multi-section, audience-specific output that benefits from human curation.
+const REQUEST_STARTER_REPORTS = [
+  "Build a board-ready F26 program summary — spend, cancellation, top risks.",
+  "F25 cancellation post-mortem — what drove the high requote rate, and what should change next cycle?",
+  "Quarterly business review for the Luxury portfolio — performance, demand signal, recommendations.",
+];
+
+// Custom Report has two modes:
+//   'now'     — chat with the analyst agent against /api/chat (live data)
+//   'request' — chat with the intake agent against /api/report-intake → queue row
+let customRptMode = 'now';
+let customRptInputLocked = false;     // true after a successful submit
+let demoUsersCache = [];               // populated lazily on first entry
+let currentRequesterId = null;
+
+// Build [Filters: ...] prefix from existing state.filters
+function chatFilterPairs() {
+  const pairs = [];
+  if (state.filters.years && state.filters.years.length) pairs.push(['year', state.filters.years.join(',')]);
+  if (state.filters.brand)    pairs.push(['brand', state.filters.brand]);
+  if (state.filters.category) pairs.push(['category', state.filters.category]);
+  // Wire key is `season` (user-facing terminology); local state stays
+  // `state.filters.wave` to match the DOM id #fWave and SQL column buy_wave.
+  // This is the single source of the "wave"→agent leak we want to avoid.
+  if (state.filters.wave)     pairs.push(['season', state.filters.wave]);
+  return pairs;
+}
+function chatFilterPrefix() {
+  const pairs = chatFilterPairs();
+  if (!pairs.length) return '';
+  return `[Filters: ${pairs.map(([k,v]) => `${k}=${v}`).join(', ')}]`;
+}
+function chatEscapeHtml(s){return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function chatRenderMarkdown(text) {
+  const rendered = marked.parse(text || '', { breaks:true, gfm:true });
+  return DOMPurify.sanitize(rendered, { ADD_ATTR:['style','class'] });
+}
+async function chatPost(message, sessionId, surface, requesterUserId) {
+  const body = { session_id: sessionId, message };
+  if (surface) body.surface = surface;
+  if (requesterUserId) body.requester_user_id = requesterUserId;
+  const res = await fetch('/api/chat', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// Filter-chip strip shown in the Custom Report mode header
+function updateFilterChips() {
+  const wrap = document.getElementById('customRptFilterChips');
+  if (!wrap) return;
+  const pairs = chatFilterPairs();
+  if (!pairs.length) {
+    wrap.innerHTML = '<span class="custom-rpt-filterchip empty">No filters active — agent sees full data</span>';
+    return;
+  }
+  wrap.innerHTML = pairs.map(([k,v]) => `<span class="custom-rpt-filterchip">${chatEscapeHtml(k)}=${chatEscapeHtml(v)}</span>`).join('');
+}
+
+// Hook updateFilterChips into renderAll so chips track filter changes live
+if (typeof renderAll === 'function') {
+  const __origRenderAll = renderAll;
+  window.renderAll = function() {
+    __origRenderAll.apply(this, arguments);
+    try { updateFilterChips(); } catch(_) {}
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// CUSTOM REPORT MODE
+// ─────────────────────────────────────────────────────────────
+async function enterCustomReportMode() {
+  document.getElementById('mainPanel').classList.add('custom-active');
+  updateFilterChips();
+  // Reset mode + locked state on entry — every entry is a clean slate.
+  customRptMode = 'now';
+  customRptInputLocked = false;
+  document.getElementById('modeBtnNow').classList.add('active');
+  document.getElementById('modeBtnRequest').classList.remove('active');
+  document.getElementById('customRptRequester').style.display = 'none';
+  setInputLocked(false);
+  // Fresh session every entry — wipe the transcript and start the conversation
+  // over so the agent never inherits memory from a prior report or the widget.
+  CHAT_SESSION_ID_CUSTOM_RPT = crypto.randomUUID();
+  const inner = document.getElementById('customRptTranscriptInner');
+  inner.innerHTML = '';
+  renderCustomRptGreeting();
+  // Close the floating widget if it's open — only one chat surface at a time
+  document.getElementById('chatFabPanel').classList.remove('open');
+  // Lazy-load the demo users for the requester picker (only once per page life)
+  if (!demoUsersCache.length) {
+    try { await loadDemoUsers(); } catch (_) { /* picker will stay empty; mode toggle catches that */ }
+  }
+  setTimeout(() => document.getElementById('customRptInput').focus(), 50);
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+function exitCustomReportMode() {
+  document.getElementById('mainPanel').classList.remove('custom-active');
+}
+
+async function loadDemoUsers() {
+  const { data, error } = await sb
+    .from('demo_users')
+    .select('id, display_name, email, role_label')
+    .order('display_name');
+  if (error) throw new Error(error.message);
+  demoUsersCache = data || [];
+  // The picker only exists in Custom Report mode; the widget calls
+  // loadDemoUsers() too (so submit_report_request has a default requester)
+  // but has no picker UI, so guard the DOM update.
+  const sel = document.getElementById('requesterPicker');
+  if (sel) {
+    sel.innerHTML = demoUsersCache
+      .map(u => `<option value="${u.id}">${chatEscapeHtml(u.display_name)} — ${chatEscapeHtml(u.role_label || '')}</option>`)
+      .join('');
+  }
+  currentRequesterId = demoUsersCache[0]?.id || null;
+}
+
+function onRequesterChange() {
+  currentRequesterId = document.getElementById('requesterPicker').value || null;
+}
+
+function switchCustomRptMode(mode) {
+  if (mode === customRptMode) return;
+  customRptMode = mode;
+  customRptInputLocked = false;
+  document.getElementById('modeBtnNow').classList.toggle('active', mode === 'now');
+  document.getElementById('modeBtnRequest').classList.toggle('active', mode === 'request');
+  document.getElementById('customRptRequester').style.display = mode === 'request' ? '' : 'none';
+  setInputLocked(false);
+  // Wipe and start a fresh session whenever the mode changes.
+  CHAT_SESSION_ID_CUSTOM_RPT = crypto.randomUUID();
+  const inner = document.getElementById('customRptTranscriptInner');
+  inner.innerHTML = '';
+  if (mode === 'request') renderCustomRptRequestGreeting();
+  else                    renderCustomRptGreeting();
+  document.getElementById('customRptInput').placeholder =
+    mode === 'request' ? 'Describe the report you want…' : 'Ask the analyst anything about the data…';
+  document.getElementById('customRptInput').focus();
+}
+
+function setInputLocked(locked) {
+  customRptInputLocked = !!locked;
+  const input = document.getElementById('customRptInput');
+  const btn = document.getElementById('customRptSend');
+  input.disabled = locked;
+  btn.disabled = locked;
+  if (locked) input.placeholder = 'Request submitted — open Custom Report again to start over.';
+}
+
+// ─────────────────────────────────────────────────────────────
+// ChatSurface — one class for both chat surfaces (the floating
+// widget and Custom Report). The two render identically modulo DOM
+// ids, CSS class prefixes, the filter-prefix chip style, the
+// "thinking" copy, and whether agent report-HTML is stripped (the
+// widget is prose-only). Everything surface-specific — modes,
+// input-lock, requester, the submitted card, greetings — stays in
+// the standalone functions; only the twinned render + send loop
+// lives here.
+// ─────────────────────────────────────────────────────────────
+class ChatSurface {
+  constructor(cfg) { this.cfg = cfg; }
+  get transcript() { return document.getElementById(this.cfg.transcriptEl); }
+  scrollBottom() {
+    const s = document.getElementById(this.cfg.scrollEl);
+    requestAnimationFrame(() => { s.scrollTop = s.scrollHeight; });
+  }
+  appendUser(text, prefix) {
+    const msg = document.createElement('div'); msg.className = `${this.cfg.msgClass} user`;
+    let h = `<div class="${this.cfg.roleClass}">You</div>`;
+    if (prefix) h += `<div style="${this.cfg.prefixStyle}">${chatEscapeHtml(prefix)}</div>`;
+    msg.innerHTML = h;
+    const b = document.createElement('div'); b.className = this.cfg.bubbleClass; b.textContent = text;
+    msg.appendChild(b); this.transcript.appendChild(msg); this.scrollBottom();
+  }
+  appendAssistant(content) {
+    const msg = document.createElement('div'); msg.className = `${this.cfg.msgClass} assistant`;
+    msg.innerHTML = `<div class="${this.cfg.roleClass}">Assistant</div>`;
+    const b = document.createElement('div'); b.className = this.cfg.bubbleClass;
+    b.innerHTML = chatRenderMarkdown(this.cfg.sanitize ? this.cfg.sanitize(content) : content);
+    msg.appendChild(b); this.transcript.appendChild(msg); this.scrollBottom();
+  }
+  appendError(text) {
+    const msg = document.createElement('div'); msg.className = `${this.cfg.msgClass} error`;
+    msg.innerHTML = `<div class="${this.cfg.roleClass}">Error</div>`;
+    const b = document.createElement('div'); b.className = this.cfg.bubbleClass; b.textContent = text;
+    msg.appendChild(b); this.transcript.appendChild(msg); this.scrollBottom();
+  }
+  showThinking() {
+    const t = document.createElement('div'); t.className = this.cfg.thinkingClass; t.id = this.cfg.thinkingId;
+    t.innerHTML = `<div class="${this.cfg.roleClass}">Assistant</div><div class="${this.cfg.bubbleClass}"><span class="dot-spin"></span>${this.cfg.thinkingText}</div>`;
+    this.transcript.appendChild(t); this.scrollBottom();
+  }
+  hideThinking() { const t = document.getElementById(this.cfg.thinkingId); if (t) t.remove(); }
+  async send() {
+    if (this.cfg.isLocked && this.cfg.isLocked()) return;
+    const input = document.getElementById(this.cfg.inputEl);
+    const btn = document.getElementById(this.cfg.sendEl);
+    const text = input.value.trim();
+    if (!text) return;
+    const guard = this.cfg.guard ? this.cfg.guard() : null;
+    if (guard) { this.appendError(guard); return; }
+    const prefix = this.cfg.prefix ? this.cfg.prefix() : '';
+    const payload = this.cfg.buildPayload(text, prefix);
+    this.appendUser(text, this.cfg.userPrefix ? this.cfg.userPrefix(prefix) : prefix);
+    input.value = ''; if (this.cfg.autoResize) this.cfg.autoResize(input);
+    input.disabled = true; btn.disabled = true;
+    this.showThinking();
+    try {
+      const data = await this.cfg.transport(payload);
+      this.hideThinking();
+      const reply = this.cfg.emptyReplyText ? (data.reply || this.cfg.emptyReplyText) : data.reply;
+      if (reply) this.appendAssistant(reply);
+      if (this.cfg.onData && this.cfg.onData(data)) return;
+    } catch (err) {
+      this.hideThinking();
+      this.appendError(err.message || String(err));
+    } finally {
+      if (!(this.cfg.isLocked && this.cfg.isLocked())) { input.disabled = false; btn.disabled = false; input.focus(); }
+    }
+  }
+}
+
+const fabSurface = new ChatSurface({
+  transcriptEl: 'chatFabTranscript', scrollEl: 'chatFabBody',
+  inputEl: 'chatFabInput', sendEl: 'chatFabSend',
+  msgClass: 'fab-msg', bubbleClass: 'fab-bubble', roleClass: 'fab-msg-role',
+  thinkingId: 'fabThinking', thinkingClass: 'fab-msg assistant fab-thinking', thinkingText: 'Querying…',
+  prefixStyle: 'font-family:var(--mono);font-size:8px;letter-spacing:0.08em;background:var(--blue-tint);color:var(--blue-deep);padding:2px 6px;border-radius:2px;align-self:flex-end;max-width:90%',
+  sanitize: stripChatReportBlock,   // widget is prose-only — strip any stray report block
+  autoResize: fabAutoResize,
+  prefix: chatFilterPrefix,
+  buildPayload: (text, prefix) => prefix ? `${prefix}\n${text}` : text,
+  emptyReplyText: '(empty response)',
+  transport: (payload) => chatPost(payload, CHAT_SESSION_ID_WIDGET, 'widget', currentRequesterId),
+});
+
+const customRptSurface = new ChatSurface({
+  transcriptEl: 'customRptTranscriptInner', scrollEl: 'customRptTranscript',
+  inputEl: 'customRptInput', sendEl: 'customRptSend',
+  msgClass: 'crm-msg', bubbleClass: 'crm-bubble', roleClass: 'crm-msg-role',
+  thinkingId: 'crmThinking', thinkingClass: 'crm-msg assistant crm-thinking', thinkingText: 'Querying database…',
+  prefixStyle: 'font-family:var(--mono);font-size:9px;letter-spacing:0.1em;background:var(--blue-tint);color:var(--blue-deep);padding:3px 8px;border-radius:3px;align-self:flex-end;max-width:90%',
+  sanitize: null,                   // Custom Report may render full report HTML
+  autoResize: customRptAutoResize,
+  isLocked: () => customRptInputLocked,
+  guard: () => (customRptMode === 'request' && !currentRequesterId)
+    ? 'Pick a requester from the dropdown above before submitting.' : null,
+  prefix: chatFilterPrefix,
+  // Only attach the filter prefix in "see data now" mode. In request mode,
+  // filters are captured as suggested_filters via the intake tool instead.
+  buildPayload: (text, prefix) => (customRptMode === 'now' && prefix) ? `${prefix}\n${text}` : text,
+  userPrefix: (prefix) => customRptMode === 'now' ? prefix : '',
+  transport: (payload) => customRptMode === 'request'
+    ? intakePost(payload, CHAT_SESSION_ID_CUSTOM_RPT, currentRequesterId)
+    : chatPost(payload, CHAT_SESSION_ID_CUSTOM_RPT, 'custom_report'),
+  onData: (data) => {
+    if (data.submitted && data.request_id) {
+      appendCustomRptSubmittedCard(data.request_id);
+      setInputLocked(true);
+      return true;   // leave input locked; skip the finally re-enable
+    }
+    return false;
+  },
+});
+
+function renderCustomRptGreeting() {
+  const inner = document.getElementById('customRptTranscriptInner');
+  const msg = document.createElement('div');
+  msg.className = 'crm-msg assistant';
+  // Same starter questions as the widget greeting (rendered from
+  // STARTER_QUESTIONS) — clicking the same chip in each surface lets
+  // the user compare a tight prose answer (widget) against a full
+  // report-style answer (Custom Report) for an identical prompt.
+  msg.innerHTML = `
+    <div class="crm-msg-role">Assistant</div>
+    <div class="crm-bubble">
+      <p><strong>What kind of report or insights would you like to generate?</strong></p>
+      <p style="color:var(--gray-mid);font-size:13px">Describe a metric, a comparison, or a trend you want to see. Your active filters in the left rail scope the result. A few starters:</p>
+      <div class="crm-sample-chips" id="crmStarterChips"></div>
+    </div>`;
+  inner.appendChild(msg);
+  const chipsContainer = msg.querySelector('#crmStarterChips');
+  STARTER_QUESTIONS.forEach((q) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'crm-sample-chip';
+    btn.textContent = q;
+    btn.addEventListener('click', () => customRptSample(q));
+    chipsContainer.appendChild(btn);
+  });
+}
+
+function renderCustomRptRequestGreeting() {
+  const inner = document.getElementById('customRptTranscriptInner');
+  const msg = document.createElement('div');
+  msg.className = 'crm-msg assistant';
+  // Chips rendered from REQUEST_STARTER_REPORTS (see constant block near
+  // the top of this script) — DOM-built so the em-dashes and apostrophes
+  // in the deliverable-style prompts don't need HTML escaping.
+  msg.innerHTML = `
+    <div class="crm-msg-role">Assistant</div>
+    <div class="crm-bubble">
+      <p><strong>What kind of report would you like to request?</strong></p>
+      <p style="color:var(--gray-mid);font-size:13px">Describe what you want in plain language. I'll ask up to a few quick questions if anything's unclear, then drop it in the queue. You'll get an email with a link to the finished report once it's approved.</p>
+      <div class="crm-sample-chips" id="crmRequestStarterChips"></div>
+    </div>`;
+  inner.appendChild(msg);
+  const chipsContainer = msg.querySelector('#crmRequestStarterChips');
+  REQUEST_STARTER_REPORTS.forEach((q) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'crm-sample-chip';
+    btn.textContent = q;
+    btn.addEventListener('click', () => customRptSample(q));
+    chipsContainer.appendChild(btn);
+  });
+}
+
+function appendCustomRptSubmittedCard(requestId) {
+  const inner = document.getElementById('customRptTranscriptInner');
+  const card = document.createElement('div');
+  card.className = 'crm-msg assistant';
+  card.innerHTML = `
+    <div class="crm-msg-role">Submitted</div>
+    <div class="crm-bubble">
+      <div class="crm-submitted-card">
+        <h4>✓ Report request added to the queue</h4>
+        <p>You'll receive an email at the address on file once the admin team approves the report.</p>
+        <span class="req-id">${chatEscapeHtml(requestId)}</span>
+      </div>
+    </div>`;
+  inner.appendChild(card);
+  customRptSurface.scrollBottom();
+}
+function customRptSample(text) {
+  document.getElementById('customRptInput').value = text;
+  sendCustomRptMessage();
+}
+function customRptAutoResize(el) { el.style.height='auto'; el.style.height = Math.min(el.scrollHeight, 160)+'px'; }
+
+// Custom Report send loop lives in ChatSurface (see customRptSurface config).
+function sendCustomRptMessage() { customRptSurface.send(); }
+
+async function intakePost(message, sessionId, requesterId) {
+  const res = await fetch('/api/report-intake', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ session_id: sessionId, message, requester_user_id: requesterId })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ─────────────────────────────────────────────────────────────
+// FLOATING WIDGET (Mode A — questions about the current dashboard)
+// ─────────────────────────────────────────────────────────────
+let fabGreeted = false;
+function toggleFabPanel() {
+  const panel = document.getElementById('chatFabPanel');
+  const isOpen = panel.classList.toggle('open');
+  panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen && !fabGreeted) {
+    renderFabGreeting();
+    fabGreeted = true;
+  }
+  // Lazy-load the demo users so submit_report_request has a default
+  // requester to attribute the queue row to. Custom Report mode may have
+  // already populated demoUsersCache; skip if so.
+  if (isOpen && !demoUsersCache.length) {
+    loadDemoUsers().catch(() => { /* submit_report_request will surface a clear error if it runs without a requester */ });
+  }
+  if (isOpen) setTimeout(() => document.getElementById('chatFabInput').focus(), 50);
+}
+function renderFabGreeting() {
+  const t = document.getElementById('chatFabTranscript');
+  const msg = document.createElement('div'); msg.className='fab-msg assistant';
+  msg.innerHTML = `
+    <div class="fab-msg-role">Assistant</div>
+    <div class="fab-bubble">
+      <p>Ask me anything about what you're seeing — your active filters scope the answer.</p>
+      <div class="fab-sample-chips" id="fabStarterChips"></div>
+      <p style="color:var(--gray-mid);font-size:11.5px;margin:8px 0 0">For a brand-new report, open <a href="#" class="fab-link-custom-rpt" onclick="event.preventDefault();enterCustomReportMode();return false;">Custom Report</a> instead.</p>
+    </div>`;
+  t.appendChild(msg);
+  // Build chips via DOM so we can attach handlers without HTML-attribute
+  // escaping for the apostrophe in "What's…".
+  const chipsContainer = msg.querySelector('#fabStarterChips');
+  STARTER_QUESTIONS.forEach((q) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fab-sample-chip';
+    btn.textContent = q;
+    btn.addEventListener('click', () => fabSample(q));
+    chipsContainer.appendChild(btn);
+  });
+}
+function fabSample(text) {
+  const input = document.getElementById('chatFabInput');
+  input.value = text;
+  fabAutoResize(input);
+  sendFabMessage();
+}
+function fabAutoResize(el) { el.style.height='auto'; el.style.height = Math.min(el.scrollHeight, 120)+'px'; }
+
+// Defensive: the widget surface is prose-only (see chat-agent.md Surface
+// modes). If the agent ever slips a <div class="chat-report">…</div> block
+// through, strip it before render so the bubble can't accidentally host a
+// structured report. The prompt is the primary defense; this is belt-and-
+// suspenders. Operates on the raw markdown string before marked/DOMPurify.
+function stripChatReportBlock(text) {
+  if (!text) return text;
+  return text.replace(/<div\s+class\s*=\s*["']chat-report["'][\s\S]*?<\/div>/gi, '').trim();
+}
+
+// Widget send loop lives in ChatSurface (see fabSurface config). stripChatReportBlock
+// is wired in as fabSurface.sanitize so widget replies stay prose-only.
+function sendFabMessage() { fabSurface.send(); }
+
+// Initial chip state
+try { updateFilterChips(); } catch(_) {}
+</script>
+</body>
+</html>

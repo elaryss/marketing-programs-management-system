@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Program Dashboard — Overclock Hub</title>
+
+<!-- Pre-render auth peek: skip showing gate if a Supabase session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ PRE-BUY DASHBOARD · page-specific (rail + KPI + reports) ━━━ */
+
+:root{ --teal:#14A8AD; --rail:#0c1019; }
+
+/* LAYOUT — dark rail FIXED on the left, light main flows on the right */
+.layout{display:flex;align-items:flex-start;padding-left:288px}
+.main{flex:1;min-width:0;padding:0 30px 50px}
+.rail{
+  width:288px;
+  background:var(--rail);color:#e6e9ef;
+  position:fixed;left:0;top:54px;bottom:0;
+  overflow-y:auto;
+  padding:26px 22px;
+  border-right:1px solid rgba(255,255,255,0.07);
+  display:flex;flex-direction:column;
+  z-index:5;
+}
+.rail-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:var(--blue-bright);margin-bottom:6px}
+.rail-title{font-family:var(--display);font-weight:700;font-size:20px;color:#fff;letter-spacing:-0.01em;margin-bottom:24px}
+
+/* HERO */
+.hero{padding:30px 0 16px}
+.hero-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gray-mid);margin-bottom:10px;
+}
+.hero-title{
+  font-family:var(--display);font-size:34px;font-weight:700;
+  color:var(--ink);letter-spacing:-0.02em;line-height:1.04;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+}
+.hero-title em{font-style:normal;font-weight:700;color:var(--blue)}
+.live-tag{
+  display:inline-block;background:var(--blue);color:#fff;
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;
+  padding:4px 9px;border-radius:3px;text-transform:uppercase;font-weight:500;
+}
+.hero-sub{font-size:12.5px;color:var(--gray-mid);margin-top:8px;max-width:760px;line-height:1.6}
+
+/* FILTERS — live in the dark rail */
+.filter-group{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.filter-lbl{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:#9aa3b2}
+.filter-select{
+  background:#161b27;border:1px solid rgba(255,255,255,0.16);border-radius:4px;
+  padding:9px 26px 9px 11px;
+  font-family:var(--mono);font-size:11px;color:#fff;
+  cursor:pointer;appearance:none;width:100%;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239aa3b2'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+}
+.filter-select:focus{outline:none;border-color:var(--blue-bright)}
+.seg{
+  display:flex;flex-wrap:wrap;
+  border:1px solid rgba(255,255,255,0.14);border-radius:4px;overflow:hidden;
+  background:#161b27;
+}
+.seg button{
+  flex:1;background:#161b27;border:none;padding:8px 6px;
+  font-family:var(--mono);font-size:10px;cursor:pointer;color:#aeb6c2;
+  transition:background 0.15s,color 0.15s;
+  border-right:1px solid rgba(255,255,255,0.10);
+  letter-spacing:0.06em;text-transform:uppercase;
+}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--blue);color:#fff;font-weight:500}
+.filter-reset{
+  margin-top:6px;width:100%;
+  background:transparent;border:1px solid rgba(255,255,255,0.18);color:#cdd4df;
+  padding:9px 14px;border-radius:4px;
+  font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;
+  cursor:pointer;transition:border-color 0.15s,color 0.15s;
+}
+.filter-reset:hover{color:#fff;border-color:var(--blue-bright)}
+
+.rail-divider{height:1px;background:rgba(255,255,255,0.07);margin:18px 0 14px}
+.rail-stat{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-size:11px;color:#aeb6c2}
+.rail-stat strong{color:#fff;font-family:var(--mono);font-size:11px}
+
+/* KPI HEADER TILES */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;padding:18px 0 0}
+.kpi-card{
+  background:#fff;border:1px solid var(--hair);border-radius:6px;
+  padding:16px 18px;position:relative;overflow:hidden;
+  box-shadow:var(--elev);
+}
+.kpi-row .kpi-card:nth-child(1)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--blue)}
+.kpi-row .kpi-card:nth-child(2)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--blue-bright)}
+.kpi-row .kpi-card:nth-child(3)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--orange)}
+.kpi-row .kpi-card:nth-child(4)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--teal)}
+.kpi-row .kpi-card:nth-child(5)::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--green)}
+.kpi-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray-mid);margin-bottom:7px}
+.kpi-value{font-family:var(--display);font-size:24px;font-weight:700;line-height:1;color:var(--ink);letter-spacing:-0.02em}
+.kpi-sub{font-size:10px;color:var(--gray-soft);margin-top:6px;letter-spacing:0.03em}
+
+/* CANCELLATION ALERT */
+.alert{
+  background:#fff;border:1px solid rgba(192,57,43,0.25);border-left:3px solid var(--red);
+  border-radius:5px;padding:14px 18px;margin-top:18px;box-shadow:var(--elev);
+}
+.alert-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.alert-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--red);font-weight:600}
+.alert-sub{font-size:11.5px;color:var(--gray-mid);margin-bottom:8px}
+.alert-list{display:grid;grid-template-columns:1fr;gap:2px;max-height:200px;overflow-y:auto}
+.alert-item{
+  display:grid;grid-template-columns:130px 1fr 90px 110px;gap:10px;
+  font-size:11px;color:var(--gray-mid);padding:5px 0;border-bottom:0.5px solid rgba(192,57,43,0.10);
+}
+.alert-item:last-child{border-bottom:none}
+.alert-item .b{color:var(--ink);font-weight:600}
+.alert-item .o{font-family:var(--mono);font-size:10px;color:var(--orange-deep);text-transform:uppercase;letter-spacing:0.06em;text-align:right}
+.alert-item .s{font-family:var(--mono);font-size:10px;color:var(--red);text-align:right;font-weight:600}
+
+/* REPORT CARDS */
+.reports{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:18px 0 0}
+.report{
+  background:#fff;border:1px solid var(--hair);border-radius:6px;
+  box-shadow:var(--elev);overflow:hidden;display:flex;flex-direction:column;
+}
+.report.full{grid-column:1/-1}
+.report-head{padding:16px 20px 12px;border-bottom:1px solid var(--line-light)}
+.report-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--blue-deep);margin-bottom:5px}
+.report-title{font-family:var(--display);font-size:17px;color:var(--ink);font-weight:700;letter-spacing:-0.01em;margin-bottom:3px}
+.report-sub{font-size:11px;color:var(--gray-mid);line-height:1.5}
+.report-body{padding:18px 20px;flex:1;display:flex;flex-direction:column;gap:14px}
+.chart-wrap{position:relative;height:280px}
+.chart-wrap.tall{height:340px}
+
+/* ITEM RANK ROWS (top items / cat breakdown) */
+.rank-row{
+  display:grid;grid-template-columns:10px 1fr 100px 70px 44px;
+  gap:8px;align-items:center;
+  padding:7px 0;border-bottom:1px solid var(--line-light);font-size:11.5px;
+}
+.rank-row:last-child{border-bottom:none}
+.rank-row .dot{width:9px;height:9px;border-radius:50%}
+.rank-row .lbl{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-row .lbl small{display:block;color:var(--gray-soft);font-family:var(--mono);font-size:9px;letter-spacing:0.04em;margin-top:1px}
+.rank-row .barwrap{height:4px;background:var(--off-white);border-radius:2px;overflow:hidden}
+.rank-row .barfill{height:100%;border-radius:2px}
+.rank-row .v{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink);text-align:right}
+.rank-row .p{font-family:var(--mono);font-size:10px;color:var(--blue-deep);text-align:right}
+
+/* MINI / WIDE TABLES (Brand×Program, Appendix) */
+.tbl{width:100%;border-collapse:collapse}
+.tbl thead tr{background:var(--near-black)}
+.tbl thead th{
+  text-align:left;padding:9px 12px;
+  font-family:var(--mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;
+  color:#fff;font-weight:500;
+  border-bottom:2px solid var(--blue);
+  white-space:nowrap;cursor:default;
+}
+.tbl thead th.r{text-align:right}
+.tbl thead th.sortable{cursor:pointer;user-select:none}
+.tbl thead th.sortable:hover{color:#fff;background:rgba(78,107,255,0.15)}
+.tbl tbody td{padding:8px 12px;border-bottom:1px solid var(--line-light);color:var(--ink);font-size:12px}
+.tbl tbody tr:hover td{background:var(--blue-tint)}
+.tbl tbody tr:last-child td{border-bottom:none}
+.tbl td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:11px;color:var(--ink)}
+.tbl td.pct{text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--blue-deep)}
+.tbl td.muted{color:var(--gray-mid);font-size:11px}
+.tbl td.bdot{white-space:nowrap}
+.bdot-circle{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.tbl tfoot td{
+  padding:9px 12px;border-top:2px solid var(--line-light);
+  font-family:var(--mono);font-size:10.5px;color:var(--ink);font-weight:700;
+  background:rgba(10,13,20,0.03);
+}
+
+/* APPENDIX search bar */
+.app-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.app-search{
+  flex:1;max-width:340px;position:relative;
+}
+.app-search input{
+  width:100%;padding:8px 11px 8px 30px;
+  background:#fff;border:1px solid var(--line-light);border-radius:4px;
+  font-family:var(--body);font-size:12.5px;color:var(--ink);outline:none;
+  transition:border-color 0.15s,box-shadow 0.15s;
+}
+.app-search input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.app-search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--gray-mid)}
+.app-count{font-family:var(--mono);font-size:10px;color:var(--gray-mid);margin-left:auto}
+.app-count strong{color:var(--ink);font-weight:600}
+.empty-state{padding:36px 16px;text-align:center;color:var(--gray-soft);font-size:12.5px;font-style:italic}
+
+/* CATEGORY BADGES (table cells) */
+.cat-badge{
+  display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;
+}
+.cat-paper{background:var(--blue-soft);color:var(--blue-deep)}
+.cat-display{background:rgba(20,168,173,0.14);color:#0e6a6e}
+.cat-premium{background:var(--orange-soft);color:var(--orange-deep)}
+.cat-other{background:var(--off-white);color:var(--gray-mid)}
+
+/* Mini bar inside cells (Brand×Program % bar) */
+.mb-cell{width:90px;padding-right:14px!important}
+.mb{display:flex;align-items:center;justify-content:flex-end}
+.mb-fill{height:4px;border-radius:2px;min-width:2px}
+
+/* BRAND PANELS — per-brand drill-down (lives inside #brandSections which
+   spans the full .reports row and lays its children out in its own 2-col grid). */
+#brandSections{
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+@media(max-width:1100px){
+  #brandSections{grid-template-columns:1fr}
+}
+.brand-panel .report-head{position:relative;padding-left:24px}
+.brand-panel-accent{position:absolute;left:0;top:0;bottom:0;width:4px}
+.brand-panel .report-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand-share-pill{
+  font-family:var(--mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;
+  padding:3px 9px;border-radius:3px;font-weight:600;
+}
+
+.bk-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px}
+.bk-card{
+  background:var(--off-white);border:1px solid var(--line-light);border-radius:4px;
+  padding:10px 12px;position:relative;
+}
+.bk-card.accent{border-left:3px solid var(--blue);border-radius:0 4px 4px 0}
+.bk-lbl{font-family:var(--mono);font-size:8.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-mid);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-val{font-family:var(--display);font-size:16px;font-weight:700;color:var(--ink);line-height:1.1;letter-spacing:-0.02em}
+
+.brand-cancelled{
+  margin-top:4px;padding:10px 14px;border-left:3px solid var(--red);
+  background:rgba(192,57,43,0.04);border-radius:0 4px 4px 0;
+}
+.brand-cancelled-lbl{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.16em;text-transform:uppercase;
+  color:var(--red);font-weight:600;margin-bottom:6px;
+}
+.brand-cancelled-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  font-size:11px;color:var(--gray-mid);padding:3px 0;
+  border-bottom:0.5px solid rgba(192,57,43,0.10);
+}
+.brand-cancelled-row:last-child{border-bottom:none}
+.brand-cancelled-row code{font-family:var(--mono);font-size:9.5px;color:var(--gray-soft);background:transparent;padding:0 0 0 4px}
+.brand-cancelled-qty{font-family:var(--mono);font-size:10px;color:var(--red);font-weight:600;white-space:nowrap}
+
+/* PROGRAM DRILL-DOWN CARDS */
+.prog-section{margin-top:6px;padding-top:16px;border-top:1px solid var(--line-light)}
+.prog-section-title{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.2em;text-transform:uppercase;
+  color:var(--gray-mid);margin-bottom:12px;display:flex;align-items:center;gap:10px;
+}
+.prog-section-title::before{content:"";display:inline-block;width:18px;height:2px;background:var(--orange)}
+.prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.prog-card{
+  background:#fff;border:1px solid var(--line-light);border-radius:4px;overflow:hidden;
+  box-shadow:0 1px 3px rgba(10,13,20,0.04);
+}
+.prog-card-head{
+  padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:var(--off-white);border-bottom:1px solid var(--line-light);
+}
+.prog-card-name{font-size:12.5px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+.prog-card-spend{font-family:var(--mono);font-size:11.5px;color:var(--blue-deep);font-weight:600;white-space:nowrap}
+.prog-card-meta{display:flex;gap:18px;padding:9px 14px;border-bottom:1px solid var(--line-light);background:var(--blue-tint)}
+.prog-meta-item{display:flex;flex-direction:column;gap:1px}
+.prog-meta-lbl{font-family:var(--mono);font-size:8.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-soft)}
+.prog-meta-val{font-size:13px;font-weight:600;color:var(--ink)}
+.prog-card table{width:100%;border-collapse:collapse}
+.prog-card thead th{
+  text-align:left;padding:6px 12px;
+  font-family:var(--mono);font-size:8.5px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--gray-soft);font-weight:500;background:#fff;border-bottom:1px solid var(--line-light);
+}
+.prog-card thead th.r{text-align:right}
+.prog-card tbody td{padding:6px 12px;border-bottom:1px solid var(--line-light);font-size:11px;color:var(--ink)}
+.prog-card tbody tr:last-child td{border-bottom:none}
+.prog-card tbody tr:hover td{background:var(--blue-tint)}
+.prog-card tbody td.num{text-align:right;font-family:var(--mono);font-size:10px;font-variant-numeric:tabular-nums}
+.prog-card tbody td.pct{text-align:right;font-family:var(--mono);font-size:10px;color:var(--blue-deep)}
+
+@media(max-width:1200px){
+  .bk-row{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:760px){
+  .bk-row{grid-template-columns:repeat(2,1fr)}
+}
+
+/* Override shared .foot padding for the rail layout */
+.foot{padding:22px 30px}
+
+@media(max-width:1100px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:1000px){
+  .layout{flex-direction:column;padding-left:0}
+  .rail{
+    width:auto;height:auto;
+    position:static;overflow:visible;
+    border-right:none;
+    border-bottom:1px solid rgba(255,255,255,0.07);
+    padding:20px 24px;
+  }
+  .main{padding:0 24px 40px;width:100%}
+  .reports,.kpi-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Program Dashboard</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool · Live database</div>
+    <div class="gate-input-wrap"><input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()"></div>
+    <div class="gate-input-wrap"><input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"></div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link active" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn ghost" id="exportBtn" onclick="exportHTML()" title="Download a self-contained HTML snapshot of the current view (filters preserved, no Supabase required to open).">Export HTML</button>
+    <button class="btn ghost" onclick="refreshAll()">Refresh</button>
+    <button class="btn ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</nav>
+
+<div class="layout">
+  <main class="main" id="mainPanel">
+
+    <section class="hero">
+      <div class="hero-eyebrow">Marketing Ops · Program · Live from Supabase</div>
+      <h1 class="hero-title"><em>Program</em> Dashboard<span class="live-tag" id="liveTag">Loading…</span></h1>
+      <p class="hero-sub">Final production quantity, final sales price, and final spend across items. State-level views are deferred until the Sales Order Report feed is connected.</p>
+    </section>
+
+    <section class="kpi-row" id="kpiRow">
+      <div class="kpi-card"><div class="kpi-eyebrow">Final Spend</div><div class="kpi-value" id="kpi-spend">—</div><div class="kpi-sub" id="kpi-spend-sub">final production</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Brands</div><div class="kpi-value" id="kpi-brands">—</div><div class="kpi-sub" id="kpi-brands-sub">in filter</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Programs</div><div class="kpi-value" id="kpi-programs">—</div><div class="kpi-sub" id="kpi-programs-sub">across brands</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Approved Items</div><div class="kpi-value" id="kpi-approved">—</div><div class="kpi-sub" id="kpi-approved-sub">unique POS #</div></div>
+      <div class="kpi-card"><div class="kpi-eyebrow">Final Qty</div><div class="kpi-value" id="kpi-qty">—</div><div class="kpi-sub" id="kpi-qty-sub">production units</div></div>
+    </section>
+
+    <div id="alertSlot"></div>
+
+    <div class="reports">
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 01 · Brand</div>
+          <div class="report-title">Final Spend by Brand</div>
+          <div class="report-sub">Sum of <code>final_production_spend</code> per brand, ordered high to low.</div>
+        </div>
+        <div class="report-body">
+          <div class="chart-wrap tall"><canvas id="chartBrand"></canvas></div>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 02 · Category Mix</div>
+          <div class="report-title">Final Spend by Category</div>
+          <div class="report-sub">Display / Paper / Premium share of final spend.</div>
+        </div>
+        <div class="report-body">
+          <div class="chart-wrap"><canvas id="chartCategory"></canvas></div>
+        </div>
+      </div>
+
+      <div class="report">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 03 · Top Items</div>
+          <div class="report-title">Top 10 Items by Final Spend</div>
+          <div class="report-sub">Approved items only. Bars scaled to the largest item.</div>
+        </div>
+        <div class="report-body">
+          <div id="topItems"></div>
+        </div>
+      </div>
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 04 · Brand &times; Program</div>
+          <div class="report-title">Final Spend by Brand &amp; Program</div>
+          <div class="report-sub">Final qty, average final sales price, and final spend per program.</div>
+        </div>
+        <div class="report-body">
+          <div id="brandProgTable"></div>
+        </div>
+      </div>
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 05 · Category Mix</div>
+          <div class="report-title">Elements by Category — Brand &amp; Program</div>
+          <div class="report-sub">Count of unique elements per Display / Paper / Premium.</div>
+        </div>
+        <div class="report-body">
+          <div id="catCountTable"></div>
+        </div>
+      </div>
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Report 06 · Category Spend</div>
+          <div class="report-title">Final Spend by Category — Brand &amp; Program</div>
+          <div class="report-sub">Final spend allocated per category with % of program total.</div>
+        </div>
+        <div class="report-body">
+          <div id="catSpendTable"></div>
+        </div>
+      </div>
+
+      <div id="brandSections"></div>
+
+      <div class="report full">
+        <div class="report-head">
+          <div class="report-eyebrow">Appendix · Item-Level Detail</div>
+          <div class="report-title">All Items — Unique Elements</div>
+          <div class="report-sub">One row per unique POS #. Approved items only; cancellations are summarized in the alert above.</div>
+        </div>
+        <div class="report-body">
+          <div id="appendix"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <aside class="rail">
+    <div class="rail-eyebrow">Controls</div>
+    <div class="rail-title">Filters</div>
+    <div class="filter-group">
+      <label class="filter-lbl">Fiscal Year</label>
+      <div class="seg" id="fYear">
+        <button class="active" data-val="">All</button>
+        <button data-val="F24">F24</button>
+        <button data-val="F25">F25</button>
+        <button data-val="F26">F26</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Buy Wave</label>
+      <div class="seg" id="fWave">
+        <button class="active" data-val="">All</button>
+        <button data-val="HL">Holiday</button>
+        <button data-val="SM">Summer</button>
+        <button data-val="SP">Spring</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Brand Category</label>
+      <div class="seg" id="fBrandCat">
+        <button class="active" data-val="">All</button>
+        <button data-val="PRM">PRM</button>
+        <button data-val="LUX">LUX</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Brand</label>
+      <select class="filter-select" id="fBrand"><option value="">All brands</option></select>
+    </div>
+    <div class="filter-group">
+      <label class="filter-lbl">Category</label>
+      <div class="seg" id="fCategory">
+        <button class="active" data-val="">All</button>
+        <button data-val="display">Display</button>
+        <button data-val="paper">Paper</button>
+        <button data-val="premium">Premium</button>
+      </div>
+    </div>
+    <button class="filter-reset" onclick="resetFilters()">Reset</button>
+
+    <div class="rail-divider"></div>
+    <div class="rail-eyebrow" style="margin-bottom:10px">At a glance</div>
+    <div id="railStats"></div>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>Program Dashboard</em> · Live</div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+</div>
+
+<script>
+// Snapshot mode: an exported HTML file injects window.__SNAPSHOT__ (rows +
+// metadata) before this script runs. In that mode the page renders entirely
+// from the injected payload and never touches Supabase — see fetchAllPaged
+// (data seam) and enterSnapshot (auth/render seam).
+const SNAPSHOT = window.__SNAPSHOT__ || null;
+if (!SNAPSHOT && (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON)) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;"><h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+let sb = null;
+if (!SNAPSHOT) {
+  const { createClient } = supabase;
+  sb = createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+}
+
+// ── CHART DEFAULTS ──
+Chart.defaults.font.family = 'DM Mono';
+Chart.defaults.font.size = 10;
+Chart.defaults.color = '#6c7682';
+
+const state = {
+  rows: [],                                    // normalized item rows
+  filters: { year:'', wave:'', brandCategory:'', brand:'', category:'' },
+  charts: {},
+};
+
+// Cancellation buckets from v_item_outcomes.final_outcome.
+// Scope = items with pre_buy_status='include' that were later cancelled or
+// swapped to POD. (removed_prebuy / pod_prebuy / abc_merch_prebuy don't appear
+// because rows are filtered to pre_buy_status='include' at load time.)
+const CANCELLED_OUTCOMES = new Set(['cancel_cancelled','cancel_pod']);
+
+// Category display map (Supabase uses lowercase: paper/display/premium)
+const CAT_LABEL = { paper:'Paper', display:'Display', premium:'Premium' };
+const CAT_COLORS = { Display:'#14A8AD', Paper:'#1E3FD6', Premium:'#FF7A1A', Other:'#8b94a0' };
+
+// Brand color palette — derived from page tokens, not ABC brand identity.
+// Same brand always gets the same color across charts via stable hash.
+const BRAND_PALETTE = [
+  '#1E3FD6','#FF7A1A','#14A8AD','#4E6BFF','#C75200',
+  '#16278F','#FF9440','#0e6a6e','#6b4a8a','#4c545e',
+  '#8b94a0','#3A7050','#A84838','#3E6E9E','#A88030',
+];
+const _bcache = {};
+function brandColor(name) {
+  if (_bcache[name]) return _bcache[name];
+  let h = 0; for (let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) >>> 0;
+  return (_bcache[name] = BRAND_PALETTE[h % BRAND_PALETTE.length]);
+}
+
+const fmtUSD = n => '$' + Math.round(n).toLocaleString();
+const fmtPct = n => n.toFixed(1) + '%';
+const fmtPrice = n => n == null ? '—' : '$' + Number(n).toFixed(2);
+
+// ─── AUTH ───
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const errorEl = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { errorEl.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  errorEl.textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (error) {
+    document.getElementById('gateInput').classList.add('error');
+    errorEl.textContent = error.message.includes('Invalid') ? 'Wrong email or password' : error.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  loadAll();
+}
+window.addEventListener('load', async () => {
+  if (SNAPSHOT) { enterSnapshot(); return; }
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+// ─── SNAPSHOT MODE ───
+// Reveal the app without auth, render from the injected payload, then lock
+// down the interactive chrome. Replaces the old export approach of injecting
+// a fake Supabase client plus a polling lockdown script into the file.
+async function enterSnapshot() {
+  document.documentElement.classList.add('has-token');
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = 'Snapshot export';
+  await loadAll();               // reads from SNAPSHOT via fetchAllPaged
+  applySnapshotLockdown();
+}
+function applySnapshotLockdown() {
+  const snap = SNAPSHOT;
+  const dbS = document.getElementById('dbStatus'); if (dbS) dbS.textContent = 'Snapshot';
+  const lt  = document.getElementById('liveTag');  if (lt)  lt.textContent  = 'Snapshot';
+  // Pull the at-a-glance rail stats into a banner before we hide the rail.
+  let statsHtml = '';
+  document.querySelectorAll('#railStats .rail-stat').forEach((row) => {
+    const lbl = row.querySelector('span');
+    const val = row.querySelector('strong');
+    if (lbl && val) {
+      statsHtml += '<span style="white-space:nowrap;margin-right:16px">' + lbl.textContent + ': <strong style="font-family:Sora,sans-serif;letter-spacing:-0.01em;color:#3a2c0e">' + val.textContent + '</strong></span>';
+    }
+  });
+  if (!document.getElementById('__snap_banner__')) {
+    const banner = document.createElement('div');
+    banner.id = '__snap_banner__';
+    banner.style.cssText = 'background:#fef9e7;border:1px solid #f4d35e;border-left:4px solid #b5760e;border-radius:5px;padding:14px 20px;margin:18px 0 0;font-family:DM Mono,monospace;font-size:11.5px;color:#604a16;letter-spacing:0.04em;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:14px';
+    banner.innerHTML = '<div><strong style="font-family:Sora,sans-serif;letter-spacing:-0.01em;font-size:14px;color:#3a2c0e">Static Snapshot</strong> &middot; ' + escapeHtml(snap.filterSummary || '') + ' &middot; <span style="color:#8a7330">exported ' + escapeHtml(new Date(snap.exportedAt).toLocaleString()) + '</span></div><div>' + statsHtml + '</div>';
+    const main = document.querySelector('.main');
+    if (main) main.insertBefore(banner, main.firstChild);
+  }
+  const nav = document.querySelector('.nav');       if (nav)    nav.style.display = 'none';
+  const rail = document.querySelector('.rail');     if (rail)   rail.style.display = 'none';
+  const layout = document.querySelector('.layout'); if (layout) layout.style.paddingLeft = '0';
+  const main2 = document.querySelector('.main');
+  if (main2) { main2.style.padding = '0 40px 50px'; main2.style.maxWidth = '1400px'; main2.style.margin = '0 auto'; }
+}
+
+// ─── DATA FETCH ───
+// Paginate to bypass PostgREST's 1k default limit.
+async function fetchAllPaged(table, selectCols, pageSize = 1000) {
+  if (SNAPSHOT) return snapshotRows(table);
+  const out = [];
+  for (let start = 0; ; start += pageSize) {
+    const { data, error } = await sb.from(table).select(selectCols).range(start, start + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return out;
+}
+// Snapshot data seam: the two source tables are served from the injected
+// payload. selectCols is ignored — the snapshot already carries exactly the
+// columns the live query requested (see exportHTML).
+function snapshotRows(table) {
+  if (table === 'v_item_outcomes') return (SNAPSHOT.vRows || []).slice();
+  if (table === 'toolkit_items')   return (SNAPSHOT.tkRows || []).slice();
+  return [];
+}
+
+async function loadAll() {
+  document.getElementById('dbStatus').textContent = 'Loading…';
+  document.getElementById('liveTag').textContent = 'Loading…';
+  try {
+    const [vRows, tkRows] = await Promise.all([
+      fetchAllPaged('v_item_outcomes', '*'),
+      fetchAllPaged('toolkit_items', 'id,pos_number,item_description,portal_price,estimated_budget_spend,site_moq'),
+    ]);
+    // Keep raw rows around for the HTML export — it round-trips them through
+    // the same normalize pipeline so the snapshot renders identically.
+    state.rawVRows  = vRows;
+    state.rawTkRows = tkRows;
+
+    // Index toolkit_items by id for quick join
+    const tkById = {};
+    tkRows.forEach(r => { tkById[r.id] = r; });
+
+    // Scope: only items the buyer ELECTED to include in pre-buy. Items with
+    // pre_buy_status of 'removed' / 'POD' / 'Post on ABC Merch' never entered
+    // the pre-buy commitment, so they don't belong on this dashboard.
+    state.rows = vRows
+      .filter(v => v.pre_buy_status === 'include')
+      .map(v => {
+      const tk = tkById[v.toolkit_item_id] || {};
+      const catRaw = (v.item_category || '').toLowerCase();
+      const category = CAT_LABEL[catRaw] || 'Other';
+      const outcome = v.final_outcome || 'no_outcome';
+      const isCancelled = CANCELLED_OUTCOMES.has(outcome);
+      const isApproved = outcome === 'approved' || outcome === 'inventory_fulfilled';
+      return {
+        toolkitItemId: v.toolkit_item_id,        // for filtered-snapshot export
+        brand:        v.brand_name || '—',
+        brandCategory: v.brand_category || '',
+        program:      v.program_name || '—',
+        category,
+        categoryRaw:  catRaw,
+        itemType:     v.item_type || '—',
+        fiscalYear:   v.fiscal_year || 'Unknown',
+        buyWave:      v.buy_wave || 'Unknown',
+        preBuyProg:   v.pre_buy_program || '',
+        pos:          v.pos_number || tk.pos_number || '',
+        desc:         tk.item_description || '',
+        finalQty:     Number(v.final_production_qty)   || 0,
+        finalSpend:   Number(v.final_production_spend) || 0,
+        finalSalePrice: tk.portal_price != null ? Number(tk.portal_price) : null,  // production_price × 1.0675
+        outcome,
+        preBuyStatus: v.pre_buy_status || '',
+        isCancelled, isApproved,
+      };
+    });
+
+    document.getElementById('dbStatus').textContent = 'Live';
+    document.getElementById('liveTag').textContent  = 'Live';
+    populateBrandFilter();
+    wireSegments();
+    renderAll();
+  } catch (e) {
+    console.error(e);
+    document.getElementById('dbStatus').textContent = 'Error';
+    document.getElementById('liveTag').textContent  = 'Error';
+  }
+}
+
+async function refreshAll() {
+  for (const k of Object.keys(state.charts)) { try { state.charts[k]?.destroy(); } catch(_){} }
+  state.charts = {};
+  await loadAll();
+}
+
+// ─── FILTERS ───
+function populateBrandFilter() {
+  // Narrow the brand dropdown to match the current brand-category filter so
+  // selecting a LUX brand under a PRM filter (or vice versa) can't happen.
+  const bcFilter = state.filters.brandCategory;
+  const brands = [...new Set(
+    state.rows
+      .filter(r => !bcFilter || r.brandCategory === bcFilter)
+      .map(r => r.brand)
+      .filter(Boolean)
+  )].sort();
+  const sel = document.getElementById('fBrand');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All brands</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+  // Preserve current selection if still valid; otherwise clear it.
+  if (current && brands.includes(current)) sel.value = current;
+  else { sel.value = ''; state.filters.brand = ''; }
+  sel.onchange = () => { state.filters.brand = sel.value; renderAll(); };
+}
+function wireSegments() {
+  const wire = (id, key) => {
+    const btns = document.querySelectorAll(`#${id} button`);
+    btns.forEach(b => b.onclick = () => {
+      btns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.filters[key] = b.dataset.val;
+      if (key === 'brandCategory') populateBrandFilter();   // narrow brand list
+      renderAll();
+    });
+  };
+  wire('fYear','year'); wire('fWave','wave'); wire('fBrandCat','brandCategory'); wire('fCategory','category');
+}
+function resetFilters() {
+  state.filters = { year:'', wave:'', brandCategory:'', brand:'', category:'' };
+  ['fYear','fWave','fBrandCat','fCategory'].forEach(id => {
+    document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+  });
+  document.getElementById('fBrand').value = '';
+  populateBrandFilter();   // restore full brand list
+  renderAll();
+}
+
+function getFiltered() {
+  const f = state.filters;
+  return state.rows.filter(r => {
+    if (f.year          && r.fiscalYear     !== f.year)          return false;
+    if (f.wave          && r.buyWave        !== f.wave)          return false;
+    if (f.brandCategory && r.brandCategory  !== f.brandCategory) return false;
+    if (f.brand         && r.brand          !== f.brand)         return false;
+    if (f.category      && r.categoryRaw    !== f.category)      return false;
+    return true;
+  });
+}
+
+// ─── AGGREGATIONS ───
+function aggregate(rows) {
+  const active = rows.filter(r => !r.isCancelled);
+  const cancelled = rows.filter(r =>  r.isCancelled);
+
+  const totalSpend = active.reduce((s,r) => s + r.finalSpend, 0);
+  const totalQty   = active.reduce((s,r) => s + r.finalQty,   0);
+  const brandSet   = new Set(active.map(r => r.brand).filter(Boolean));
+  const progSet    = new Set(active.map(r => r.brand+'·'+r.program).filter(Boolean));
+  const approvedPOS = new Set(active.filter(r => r.isApproved).map(r => r.pos).filter(Boolean));
+
+  // Per-brand
+  const brandMap = {};
+  active.forEach(r => {
+    if (!brandMap[r.brand]) brandMap[r.brand] = { spend:0, qty:0, programs:new Set(), elems:new Set(), rows:[] };
+    const b = brandMap[r.brand];
+    b.spend += r.finalSpend; b.qty += r.finalQty;
+    if (r.program) b.programs.add(r.program);
+    if (r.pos) b.elems.add(r.pos);
+    b.rows.push(r);
+  });
+
+  // Per-category
+  const catMap = {};
+  active.forEach(r => {
+    if (!catMap[r.category]) catMap[r.category] = { spend:0, qty:0, elems:new Set() };
+    catMap[r.category].spend += r.finalSpend;
+    catMap[r.category].qty   += r.finalQty;
+    if (r.pos) catMap[r.category].elems.add(r.pos);
+  });
+
+  // Top items (by unique POS #)
+  const itemAgg = {};
+  active.forEach(r => {
+    const k = r.pos || r.desc || 'Unknown';
+    if (!itemAgg[k]) itemAgg[k] = {
+      pos:r.pos, desc:r.desc||r.pos, brand:r.brand, category:r.category,
+      qty:0, spend:0, salePrice:r.finalSalePrice,
+    };
+    itemAgg[k].qty   += r.finalQty;
+    itemAgg[k].spend += r.finalSpend;
+  });
+  const topItems = Object.values(itemAgg)
+    .filter(x => x.spend > 0)
+    .sort((a,b) => b.spend - a.spend).slice(0,10);
+
+  return { active, cancelled, totalSpend, totalQty, brandSet, progSet, approvedPOS, brandMap, catMap, topItems };
+}
+
+// ─── RENDER ENTRY POINT ───
+function renderAll() {
+  const filtered = getFiltered();
+  const agg = aggregate(filtered);
+  renderKPIs(agg);
+  renderAlert(agg);
+  renderBrandChart(agg);
+  renderCategoryChart(agg);
+  renderTopItems(agg);
+  renderBrandProgTable(agg);
+  renderCatCountTable(agg);
+  renderCatSpendTable(agg);
+  renderBrandSections(agg);
+  renderAppendix(agg);
+  renderRailStats(agg, filtered);
+}
+
+// ─── KPIs ───
+function renderKPIs(agg) {
+  document.getElementById('kpi-spend').textContent     = fmtUSD(agg.totalSpend);
+  document.getElementById('kpi-brands').textContent    = agg.brandSet.size;
+  document.getElementById('kpi-programs').textContent  = agg.progSet.size;
+  document.getElementById('kpi-approved').textContent  = agg.approvedPOS.size.toLocaleString();
+  document.getElementById('kpi-qty').textContent       = agg.totalQty.toLocaleString();
+}
+
+// ─── CANCELLATION ALERT ───
+function renderAlert(agg) {
+  const slot = document.getElementById('alertSlot');
+  if (!agg.cancelled.length) { slot.innerHTML = ''; return; }
+  // Dedupe by POS — show one row per unique cancelled element
+  const skuMap = {};
+  agg.cancelled.forEach(r => {
+    const k = r.pos || r.desc || '—';
+    if (!skuMap[k]) skuMap[k] = { pos:r.pos, desc:r.desc||r.pos, brand:r.brand, outcome:r.outcome, qty:0, spend:0 };
+    skuMap[k].qty   += r.finalQty;
+    skuMap[k].spend += r.finalSpend;
+  });
+  const items = Object.values(skuMap).sort((a,b) => b.spend - a.spend);
+  const totalReleased = items.reduce((s,i) => s + i.spend, 0);
+  const OUTCOME_LBL = {
+    cancel_cancelled:'Cancel',
+    cancel_pod:'Cancel → POD',
+    removed_prebuy:'Removed (program)',
+    pod_prebuy:'POD (program)',
+  };
+  slot.innerHTML = `
+    <div class="alert">
+      <div class="alert-head">
+        <div class="alert-eyebrow">Cancelled / Released Elements</div>
+      </div>
+      <div class="alert-sub">${items.length} unique element${items.length!==1?'s':''} not produced &middot; ${fmtUSD(totalReleased)} budget released back</div>
+      <div class="alert-list">
+        ${items.map(i => `
+          <div class="alert-item">
+            <div class="b">${escapeHtml(i.brand)}</div>
+            <div>${escapeHtml(i.desc || '—')}${i.pos ? ` <span style="color:var(--gray-soft);font-family:var(--mono);font-size:10px;">${escapeHtml(i.pos)}</span>` : ''}</div>
+            <div class="o">${OUTCOME_LBL[i.outcome] || i.outcome}</div>
+            <div class="s">${i.spend > 0 ? fmtUSD(i.spend) : '—'}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ─── BRAND CHART (bar) ───
+function destroy(id) { if (state.charts[id]) { try { state.charts[id].destroy(); } catch(_){} delete state.charts[id]; } }
+function renderBrandChart(agg) {
+  destroy('brand');
+  const el = document.getElementById('chartBrand');
+  const entries = Object.entries(agg.brandMap).sort((a,b) => b[1].spend - a[1].spend);
+  if (!entries.length) return;
+  const labels = entries.map(e => e[0]);
+  const data   = entries.map(e => e[1].spend);
+  const colors = entries.map(e => brandColor(e[0]));
+  const total  = data.reduce((s,v) => s+v, 0) || 1;
+  // With >8 brands the chart flips horizontal so labels stay readable.
+  // Whichever axis is the VALUE axis gets the $k formatter; the CATEGORY
+  // axis uses Chart.js's default label rendering so brand names show
+  // (not the tick indices).
+  const horizontal = labels.length > 8;
+  const valueAxis = {
+    grid:  { color:'rgba(10,13,20,0.06)' },
+    ticks: { font:{ size:10 }, callback: v => '$' + Math.round(v/1000) + 'k' },
+  };
+  const labelAxis = {
+    grid:  { display:false },
+    ticks: { font:{ size:10 }, autoSkip:false },
+  };
+  state.charts['brand'] = new Chart(el, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Final Spend', data, backgroundColor:colors, borderRadius:3, borderSkipped:false }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      indexAxis: horizontal ? 'y' : 'x',
+      layout:{ padding:{ top:20 } },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'#0a0d14',
+          callbacks:{
+            title:   ctx => ctx[0].label,                       // explicit brand name in tooltip
+            label:   c   => fmtUSD(c.raw) + '  (' + (c.raw/total*100).toFixed(1) + '%)',
+          }
+        },
+      },
+      scales:{
+        x: horizontal ? valueAxis : labelAxis,
+        y: horizontal ? labelAxis : valueAxis,
+      }
+    }
+  });
+}
+
+// ─── CATEGORY CHART (doughnut) ───
+function renderCategoryChart(agg) {
+  destroy('cat');
+  const el = document.getElementById('chartCategory');
+  const entries = Object.entries(agg.catMap).sort((a,b) => b[1].spend - a[1].spend);
+  if (!entries.length) return;
+  const labels = entries.map(e => e[0]);
+  const data   = entries.map(e => e[1].spend);
+  const colors = entries.map(e => CAT_COLORS[e[0]] || '#8b94a0');
+  const total  = data.reduce((s,v) => s+v, 0) || 1;
+  state.charts['cat'] = new Chart(el, {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data, backgroundColor:colors, borderColor:'#fff', borderWidth:3, hoverOffset:6 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{ size:10 }, boxWidth:10, padding:10, color:'#4c545e' }},
+        tooltip:{
+          backgroundColor:'#0a0d14',
+          callbacks:{ label: c => `${c.label}: ${fmtUSD(c.raw)} (${(c.raw/total*100).toFixed(1)}%)` }
+        }
+      }
+    }
+  });
+}
+
+// ─── TOP 10 ITEMS ───
+function renderTopItems(agg) {
+  const el = document.getElementById('topItems');
+  const items = agg.topItems;
+  if (!items.length) { el.innerHTML = '<div class="empty-state">No approved items in this filter.</div>'; return; }
+  const maxSpend = items[0].spend || 1;
+  const total = agg.totalSpend || 1;
+  el.innerHTML = items.map(i => {
+    const color = CAT_COLORS[i.category] || '#8b94a0';
+    const barW  = Math.round(i.spend / maxSpend * 100);
+    return `<div class="rank-row">
+      <div class="dot" style="background:${color}"></div>
+      <div class="lbl" title="${escapeAttr(i.desc)}">${escapeHtml(i.desc || '—')}<small>${escapeHtml(i.brand)} &middot; ${escapeHtml(i.category)}${i.pos ? ' &middot; ' + escapeHtml(i.pos) : ''}</small></div>
+      <div class="barwrap"><div class="barfill" style="width:${barW}%;background:${color}"></div></div>
+      <div class="v">${fmtUSD(i.spend)}</div>
+      <div class="p">${(i.spend/total*100).toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── BRAND × PROGRAM TABLE ───
+function renderBrandProgTable(agg) {
+  const el = document.getElementById('brandProgTable');
+  const brands = Object.entries(agg.brandMap).sort((a,b) => b[1].spend - a[1].spend);
+  if (!brands.length) { el.innerHTML = '<div class="empty-state">No data in this filter.</div>'; return; }
+  const grandTotal = brands.reduce((s,[,b]) => s + b.spend, 0) || 1;
+  const grandQty   = brands.reduce((s,[,b]) => s + b.qty,   0);
+
+  const flat = [];
+  brands.forEach(([brand, bd]) => {
+    const color = brandColor(brand);
+    const progMap = {};
+    bd.rows.forEach(r => {
+      if (!progMap[r.program]) progMap[r.program] = { spend:0, qty:0, prices:[], elems:new Set() };
+      const p = progMap[r.program];
+      p.spend += r.finalSpend;
+      p.qty   += r.finalQty;
+      if (r.finalSalePrice != null) p.prices.push(r.finalSalePrice);
+      if (r.pos) p.elems.add(r.pos);
+    });
+    Object.entries(progMap).sort((a,b) => b[1].spend - a[1].spend).forEach(([prog, pd]) => {
+      const avgPrice = pd.prices.length ? (pd.prices.reduce((s,v) => s+v, 0) / pd.prices.length) : null;
+      flat.push({ brand, color, prog, elems:pd.elems.size, qty:pd.qty, avgPrice, spend:pd.spend });
+    });
+  });
+
+  const maxSpend = flat.reduce((m,r) => Math.max(m, r.spend), 0) || 1;
+  const rows = flat.map(r => `
+    <tr>
+      <td class="bdot"><span class="bdot-circle" style="background:${r.color}"></span><strong>${escapeHtml(r.brand)}</strong></td>
+      <td>${escapeHtml(r.prog)}</td>
+      <td class="num">${r.elems}</td>
+      <td class="num">${r.qty.toLocaleString()}</td>
+      <td class="num">${fmtPrice(r.avgPrice)}</td>
+      <td class="num">${fmtUSD(r.spend)}</td>
+      <td class="pct">${(r.spend/grandTotal*100).toFixed(1)}%</td>
+      <td class="mb-cell"><div class="mb"><div class="mb-fill" style="width:${Math.round(r.spend/maxSpend*100)}%;background:${r.color}"></div></div></td>
+    </tr>`).join('');
+
+  el.innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th>Brand</th><th>Program</th>
+      <th class="r">Elements</th><th class="r">Final Qty</th>
+      <th class="r">Avg Sale Price</th><th class="r">Final Spend</th>
+      <th class="r">% of Total</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td colspan="2">Grand Total</td>
+      <td class="num">—</td>
+      <td class="num">${grandQty.toLocaleString()}</td>
+      <td class="num">—</td>
+      <td class="num">${fmtUSD(grandTotal)}</td>
+      <td class="pct">100%</td><td></td>
+    </tr></tfoot>
+  </table>`;
+}
+
+// ─── ELEMENTS BY CATEGORY (count) ───
+function buildSplitRows(agg) {
+  const THREE = ['Display','Paper','Premium'];
+  const brands = Object.entries(agg.brandMap).sort((a,b) => b[1].spend - a[1].spend);
+  const out = [];
+  brands.forEach(([brand, bd]) => {
+    const color = brandColor(brand);
+    const progMap = {};
+    bd.rows.forEach(r => {
+      const grp = THREE.includes(r.category) ? r.category : 'Other';
+      if (!progMap[r.program]) progMap[r.program] = {
+        spend:0, qty:0, elems:new Set(),
+        cats:{ Display:{spend:0,elems:new Set()}, Paper:{spend:0,elems:new Set()}, Premium:{spend:0,elems:new Set()}, Other:{spend:0,elems:new Set()} },
+      };
+      const p = progMap[r.program];
+      p.spend += r.finalSpend;
+      p.qty   += r.finalQty;
+      if (r.pos) p.elems.add(r.pos);
+      p.cats[grp].spend += r.finalSpend;
+      if (r.pos) p.cats[grp].elems.add(r.pos);
+    });
+    Object.entries(progMap).sort((a,b) => b[1].spend - a[1].spend).forEach(([prog, pd]) => {
+      out.push({ brand, color, prog, spend:pd.spend, qty:pd.qty, elems:pd.elems.size, cats:pd.cats });
+    });
+  });
+  return out;
+}
+
+function renderCatCountTable(agg) {
+  const el = document.getElementById('catCountTable');
+  const rows = buildSplitRows(agg);
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">No data in this filter.</div>'; return; }
+  const tot = { Display:0, Paper:0, Premium:0, all:0 };
+  rows.forEach(r => { ['Display','Paper','Premium'].forEach(c => tot[c] += r.cats[c].elems.size); tot.all += r.elems; });
+  const body = rows.map(r => {
+    const d = r.cats.Display.elems.size, p = r.cats.Paper.elems.size, pr = r.cats.Premium.elems.size, total = r.elems || 1;
+    return `<tr>
+      <td class="bdot"><span class="bdot-circle" style="background:${r.color}"></span><strong>${escapeHtml(r.brand)}</strong></td>
+      <td>${escapeHtml(r.prog)}</td>
+      <td class="num">${r.elems}</td>
+      <td class="num">${d || '—'}</td><td class="pct">${d ? Math.round(d/total*100) + '%' : ''}</td>
+      <td class="num">${p || '—'}</td><td class="pct">${p ? Math.round(p/total*100) + '%' : ''}</td>
+      <td class="num">${pr || '—'}</td><td class="pct">${pr ? Math.round(pr/total*100) + '%' : ''}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th>Brand</th><th>Program</th>
+      <th class="r">Total</th>
+      <th class="r">Display</th><th class="r">%</th>
+      <th class="r">Paper</th><th class="r">%</th>
+      <th class="r">Premium</th><th class="r">%</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr>
+      <td colspan="2">Grand Total</td>
+      <td class="num">${tot.all}</td>
+      <td class="num">${tot.Display || '—'}</td><td></td>
+      <td class="num">${tot.Paper || '—'}</td><td></td>
+      <td class="num">${tot.Premium || '—'}</td><td></td>
+    </tr></tfoot>
+  </table>`;
+}
+
+function renderCatSpendTable(agg) {
+  const el = document.getElementById('catSpendTable');
+  const rows = buildSplitRows(agg);
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">No data in this filter.</div>'; return; }
+  const tot = { Display:0, Paper:0, Premium:0, all:0 };
+  rows.forEach(r => { ['Display','Paper','Premium'].forEach(c => tot[c] += r.cats[c].spend); tot.all += r.spend; });
+  const gt = tot.all || 1;
+  const body = rows.map(r => {
+    const dSp = r.cats.Display.spend, pSp = r.cats.Paper.spend, prSp = r.cats.Premium.spend, total = r.spend || 1;
+    return `<tr>
+      <td class="bdot"><span class="bdot-circle" style="background:${r.color}"></span><strong>${escapeHtml(r.brand)}</strong></td>
+      <td>${escapeHtml(r.prog)}</td>
+      <td class="num">${fmtUSD(r.spend)}</td>
+      <td class="num">${dSp ? fmtUSD(dSp) : '—'}</td><td class="pct">${dSp ? Math.round(dSp/total*100) + '%' : ''}</td>
+      <td class="num">${pSp ? fmtUSD(pSp) : '—'}</td><td class="pct">${pSp ? Math.round(pSp/total*100) + '%' : ''}</td>
+      <td class="num">${prSp ? fmtUSD(prSp) : '—'}</td><td class="pct">${prSp ? Math.round(prSp/total*100) + '%' : ''}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th>Brand</th><th>Program</th>
+      <th class="r">Final Spend</th>
+      <th class="r">Display</th><th class="r">%</th>
+      <th class="r">Paper</th><th class="r">%</th>
+      <th class="r">Premium</th><th class="r">%</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr>
+      <td colspan="2">Grand Total</td>
+      <td class="num">${fmtUSD(tot.all)}</td>
+      <td class="num">${fmtUSD(tot.Display)}</td><td class="pct">${Math.round(tot.Display/gt*100)}%</td>
+      <td class="num">${fmtUSD(tot.Paper)}</td><td class="pct">${Math.round(tot.Paper/gt*100)}%</td>
+      <td class="num">${fmtUSD(tot.Premium)}</td><td class="pct">${Math.round(tot.Premium/gt*100)}%</td>
+    </tr></tfoot>
+  </table>`;
+}
+
+// ─── PER-BRAND DRILL-DOWN PANELS ───
+function renderBrandSections(agg) {
+  const el = document.getElementById('brandSections');
+  const brands = Object.entries(agg.brandMap).sort((a,b) => b[1].spend - a[1].spend);
+  if (!brands.length) { el.innerHTML = ''; return; }
+  const grandTotal = brands.reduce((s,[,b]) => s + b.spend, 0) || 1;
+
+  // Pull cancelled rows from the full filtered set (agg only carries active)
+  const filtered = getFiltered();
+  const cancelledByBrand = {};
+  filtered.filter(r => r.isCancelled).forEach(r => {
+    if (!cancelledByBrand[r.brand]) cancelledByBrand[r.brand] = {};
+    const k = r.pos || r.desc || '—';
+    if (!cancelledByBrand[r.brand][k]) cancelledByBrand[r.brand][k] = {
+      pos:r.pos, desc:r.desc || r.pos || '—', qty:0, spend:0, outcome:r.outcome,
+    };
+    cancelledByBrand[r.brand][k].qty   += r.finalQty;
+    cancelledByBrand[r.brand][k].spend += r.finalSpend;
+  });
+
+  el.innerHTML = brands.map(([brand, bd]) => {
+    const color    = brandColor(brand);
+    const brandPct = (bd.spend / grandTotal * 100).toFixed(1);
+    const uniqueElems = new Set(bd.rows.map(r => r.pos).filter(Boolean)).size;
+
+    // Category breakdown (active items only)
+    const catMap = {};
+    bd.rows.forEach(r => {
+      if (!catMap[r.category]) catMap[r.category] = { qty:0, spend:0, elems:new Set() };
+      catMap[r.category].qty   += r.finalQty;
+      catMap[r.category].spend += r.finalSpend;
+      if (r.pos) catMap[r.category].elems.add(r.pos);
+    });
+    const cats = Object.entries(catMap).sort((a,b) => b[1].spend - a[1].spend);
+
+    // Cancelled items for this brand
+    const cancelled = Object.values(cancelledByBrand[brand] || {}).sort((a,b) => b.spend - a.spend);
+
+    // Program drill-down (only if >1 program)
+    let progHtml = '';
+    if (bd.programs.size > 1) {
+      const progMap = {};
+      bd.rows.forEach(r => {
+        if (!progMap[r.program]) progMap[r.program] = {
+          spend:0, qty:0, elems:new Set(), cats:{},
+        };
+        const p = progMap[r.program];
+        p.spend += r.finalSpend;
+        p.qty   += r.finalQty;
+        if (r.pos) p.elems.add(r.pos);
+        if (!p.cats[r.category]) p.cats[r.category] = { spend:0, qty:0 };
+        p.cats[r.category].spend += r.finalSpend;
+        p.cats[r.category].qty   += r.finalQty;
+      });
+      const progs = Object.entries(progMap).sort((a,b) => b[1].spend - a[1].spend);
+      progHtml = `
+        <div class="prog-section">
+          <div class="prog-section-title">Breakdown by Program</div>
+          <div class="prog-grid">
+            ${progs.map(([prog, pd]) => {
+              const catRows = Object.entries(pd.cats).sort((a,b) => b[1].spend - a[1].spend).map(([c, cd]) => {
+                const pp = pd.spend > 0 ? Math.round(cd.spend / pd.spend * 100) : 0;
+                return `<tr>
+                  <td>${escapeHtml(c)}</td>
+                  <td class="num">${cd.qty.toLocaleString()}</td>
+                  <td class="num">${fmtUSD(cd.spend)}</td>
+                  <td class="pct">${pp}%</td>
+                </tr>`;
+              }).join('');
+              return `<div class="prog-card">
+                <div class="prog-card-head">
+                  <div class="prog-card-name">${escapeHtml(prog)}</div>
+                  <div class="prog-card-spend">${fmtUSD(pd.spend)}</div>
+                </div>
+                <div class="prog-card-meta">
+                  <div class="prog-meta-item">
+                    <span class="prog-meta-lbl">Unique Elements</span>
+                    <span class="prog-meta-val">${pd.elems.size}</span>
+                  </div>
+                  <div class="prog-meta-item">
+                    <span class="prog-meta-lbl">Final Qty</span>
+                    <span class="prog-meta-val">${pd.qty.toLocaleString()}</span>
+                  </div>
+                </div>
+                <table>
+                  <thead><tr><th>Category</th><th class="r">Qty</th><th class="r">Spend</th><th class="r">%</th></tr></thead>
+                  <tbody>${catRows}</tbody>
+                </table>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+
+    return `<div class="report brand-panel">
+      <span class="brand-panel-accent" style="background:${color}"></span>
+      <div class="report-head">
+        <div class="report-eyebrow">Brand &middot; ${escapeHtml(brand)}</div>
+        <div class="report-title">
+          ${escapeHtml(brand)}
+          <span class="brand-share-pill" style="background:${hexAlpha(color,0.12)};color:${color}">${brandPct}% of total</span>
+        </div>
+        <div class="report-sub">${bd.programs.size} program${bd.programs.size !== 1 ? 's' : ''} &middot; ${uniqueElems} unique element${uniqueElems !== 1 ? 's' : ''} &middot; ${bd.qty.toLocaleString()} final qty</div>
+      </div>
+      <div class="report-body">
+
+        <div class="bk-row">
+          <div class="bk-card accent" style="border-left-color:${color}">
+            <div class="bk-lbl">Final Spend</div><div class="bk-val">${fmtUSD(bd.spend)}</div>
+          </div>
+          <div class="bk-card accent" style="border-left-color:${color}">
+            <div class="bk-lbl">Programs</div><div class="bk-val">${bd.programs.size}</div>
+          </div>
+          <div class="bk-card accent" style="border-left-color:${color}">
+            <div class="bk-lbl">Elements</div><div class="bk-val">${uniqueElems}</div>
+          </div>
+          <div class="bk-card accent" style="border-left-color:${color}">
+            <div class="bk-lbl">Final Qty</div><div class="bk-val">${bd.qty.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <table class="tbl">
+          <thead><tr>
+            <th>Category</th>
+            <th class="r">Elements</th>
+            <th class="r">Final Qty</th>
+            <th class="r">Final Spend</th>
+            <th class="r">%</th>
+          </tr></thead>
+          <tbody>
+            ${cats.length ? cats.map(([c, cd]) => `
+              <tr>
+                <td>${escapeHtml(c)}</td>
+                <td class="num">${cd.elems.size}</td>
+                <td class="num">${cd.qty.toLocaleString()}</td>
+                <td class="num">${fmtUSD(cd.spend)}</td>
+                <td class="pct">${bd.spend > 0 ? (cd.spend / bd.spend * 100).toFixed(1) : '0'}%</td>
+              </tr>`).join('') : `<tr><td colspan="5" class="empty-state">No active items</td></tr>`}
+          </tbody>
+        </table>
+
+        ${cancelled.length ? `
+          <div class="brand-cancelled">
+            <div class="brand-cancelled-lbl">Cancelled &middot; ${cancelled.length} unique element${cancelled.length !== 1 ? 's' : ''}</div>
+            ${cancelled.map(c => `
+              <div class="brand-cancelled-row">
+                <span>${escapeHtml(c.desc)}${c.pos ? ` <code>${escapeHtml(c.pos)}</code>` : ''}</span>
+                <span class="brand-cancelled-qty">${c.qty} qty${c.spend > 0 ? ` &middot; ${fmtUSD(c.spend)}` : ''}</span>
+              </div>`).join('')}
+          </div>
+        ` : ''}
+
+        ${progHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Hex color → rgba with given alpha (for soft pill backgrounds)
+function hexAlpha(hex, alpha) {
+  const h = hex.replace('#','');
+  const n = h.length === 3 ? h.split('').map(c => c+c).join('') : h;
+  const r = parseInt(n.substr(0,2),16), g = parseInt(n.substr(2,2),16), b = parseInt(n.substr(4,2),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ─── APPENDIX (unique elements, sortable, searchable) ───
+let _appItems = [];
+let _appSort  = { col:'spend', dir:-1 };
+let _appQuery = '';
+
+function renderAppendix(agg) {
+  // One row per unique POS # among approved/active items.
+  const map = {};
+  agg.active.forEach(r => {
+    const k = r.pos || r.desc || '—';
+    if (!map[k]) map[k] = {
+      pos:r.pos || '—', desc:r.desc || r.pos || '—',
+      brand:r.brand, program:r.program, period:`${r.fiscalYear} ${r.buyWave}`,
+      category:r.category, qty:0, spend:0, salePrices:[],
+    };
+    map[k].qty   += r.finalQty;
+    map[k].spend += r.finalSpend;
+    if (r.finalSalePrice != null) map[k].salePrices.push(r.finalSalePrice);
+  });
+  _appItems = Object.values(map).map(i => ({
+    ...i,
+    salePrice: i.salePrices.length ? (i.salePrices.reduce((s,v) => s+v, 0) / i.salePrices.length) : null,
+  }));
+  _appSort = { col:'spend', dir:-1 };
+  drawAppendix();
+}
+
+function appSearchInput(value) { _appQuery = value; drawAppendix(); }
+function appSort(col) {
+  if (_appSort.col === col) _appSort.dir *= -1;
+  else { _appSort.col = col; _appSort.dir = (col === 'qty' || col === 'spend' || col === 'salePrice') ? -1 : 1; }
+  drawAppendix();
+}
+
+function drawAppendix() {
+  const el = document.getElementById('appendix');
+  const q = (_appQuery || '').toLowerCase();
+  const filtered = q
+    ? _appItems.filter(i => [i.brand, i.program, i.period, i.category, i.pos, i.desc].some(v => String(v||'').toLowerCase().includes(q)))
+    : _appItems;
+  const sorted = [...filtered].sort((a,b) => {
+    const av = a[_appSort.col], bv = b[_appSort.col];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return typeof av === 'number' ? (av - bv) * _appSort.dir : String(av).localeCompare(String(bv)) * _appSort.dir;
+  });
+
+  const cols = [
+    { key:'brand',     label:'Brand' },
+    { key:'program',   label:'Program' },
+    { key:'period',    label:'Period' },
+    { key:'category',  label:'Category' },
+    { key:'pos',       label:'POS #' },
+    { key:'desc',      label:'Item Description' },
+    { key:'qty',       label:'Final Qty',         r:true },
+    { key:'salePrice', label:'Sale Price',        r:true },
+    { key:'spend',     label:'Final Spend',       r:true },
+  ];
+  const thead = cols.map(c => {
+    const active = _appSort.col === c.key;
+    const arr = active ? (_appSort.dir === -1 ? ' ↓' : ' ↑') : '';
+    return `<th class="${c.r ? 'r' : ''} sortable" onclick="appSort('${c.key}')">${c.label}<span style="opacity:${active ? 0.85 : 0.25};margin-left:4px;">${arr || '·'}</span></th>`;
+  }).join('');
+
+  const tbody = sorted.map(i => {
+    const catClass = ({ Display:'cat-display', Paper:'cat-paper', Premium:'cat-premium' })[i.category] || 'cat-other';
+    return `<tr>
+      <td><strong>${escapeHtml(i.brand)}</strong></td>
+      <td>${escapeHtml(i.program)}</td>
+      <td class="muted">${escapeHtml(i.period)}</td>
+      <td><span class="cat-badge ${catClass}">${escapeHtml(i.category)}</span></td>
+      <td class="muted" style="font-family:var(--mono);font-size:10.5px">${escapeHtml(i.pos)}</td>
+      <td>${escapeHtml(i.desc)}</td>
+      <td class="num">${i.qty.toLocaleString()}</td>
+      <td class="num">${fmtPrice(i.salePrice)}</td>
+      <td class="num" style="color:var(--blue-deep);font-weight:600">${fmtUSD(i.spend)}</td>
+    </tr>`;
+  }).join('');
+
+  const totalQty   = sorted.reduce((s,i) => s + i.qty,   0);
+  const totalSpend = sorted.reduce((s,i) => s + i.spend, 0);
+
+  // Preserve focus on search input across re-renders
+  const existing = el.querySelector('#appSearch');
+  const focused = existing && existing === document.activeElement;
+
+  el.innerHTML = `
+    <div class="app-toolbar">
+      <div class="app-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="appSearch" type="text" placeholder="Search brand, program, POS, description…" value="${escapeAttr(_appQuery)}" oninput="appSearchInput(this.value)">
+      </div>
+      <div class="app-count"><strong>${sorted.length}</strong> of ${_appItems.length} elements</div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr>${thead}</tr></thead>
+        <tbody>${tbody || `<tr><td colspan="${cols.length}" class="empty-state">No matches.</td></tr>`}</tbody>
+        <tfoot><tr>
+          <td colspan="6">Total — ${sorted.length} element${sorted.length !== 1 ? 's' : ''}</td>
+          <td class="num">${totalQty.toLocaleString()}</td>
+          <td class="num">—</td>
+          <td class="num" style="color:var(--blue-deep)">${fmtUSD(totalSpend)}</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+
+  if (focused) {
+    const inp = el.querySelector('#appSearch');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+}
+
+// ─── RAIL "AT A GLANCE" ───
+function renderRailStats(agg, filtered) {
+  const el = document.getElementById('railStats');
+  const cancelledCount = new Set(agg.cancelled.map(r => r.pos || r.desc || '—')).size;
+  const totalItems     = new Set(filtered.map(r => r.pos || r.desc || '—')).size;
+  const approvedCount  = agg.approvedPOS.size;
+  // In-progress = included in pre-buy but no final outcome yet
+  // (no_outcome / in_flight_requoting / requoting / part_of_kit / unknown).
+  const inProgress = Math.max(0, totalItems - approvedCount - cancelledCount);
+  // Cancel rate is more honest against resolved items only — F27 in-flight
+  // items shouldn't dilute the denominator.
+  const resolved   = approvedCount + cancelledCount;
+  const cancelRate = resolved > 0 ? (cancelledCount / resolved * 100) : 0;
+  el.innerHTML = `
+    <div class="rail-stat"><span>Items in view</span><strong>${totalItems.toLocaleString()}</strong></div>
+    <div class="rail-stat"><span>Approved</span><strong>${approvedCount.toLocaleString()}</strong></div>
+    <div class="rail-stat"><span>In progress</span><strong>${inProgress.toLocaleString()}</strong></div>
+    <div class="rail-stat"><span>Cancelled / Released</span><strong>${cancelledCount.toLocaleString()}</strong></div>
+    <div class="rail-stat" title="Cancelled ÷ (Approved + Cancelled) — excludes in-progress items"><span>Cancel rate</span><strong>${cancelRate.toFixed(1)}%</strong></div>
+  `;
+}
+
+// ─── EXPORT HTML SNAPSHOT ───
+// Bundles the current filtered view into a self-contained HTML file that
+// renders without Supabase. Strategy: clone this page's source, inline the
+// shared stylesheet, stub APP_CONFIG + the supabase client to return the
+// snapshotted rows, then poll for first render and apply read-only lockdown.
+function describeFilters() {
+  const parts = [];
+  if (state.filters.year)          parts.push('Year ' + state.filters.year);
+  if (state.filters.wave)          parts.push('Wave ' + state.filters.wave);
+  if (state.filters.brandCategory) parts.push('Brand Cat ' + state.filters.brandCategory);
+  if (state.filters.brand)         parts.push('Brand: ' + state.filters.brand);
+  if (state.filters.category)      parts.push('Category: ' + state.filters.category);
+  return parts.length ? parts.join(' · ') : 'All included items (no filters)';
+}
+
+async function exportHTML() {
+  const btn = document.getElementById('exportBtn');
+  if (!state.rows.length) {
+    if (btn) { btn.disabled = true; btn.textContent = 'No data'; setTimeout(() => { btn.disabled=false; btn.textContent='Export HTML'; }, 1500); }
+    return;
+  }
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+  try {
+    // Filter the raw rows to match the current filtered view (by toolkit_item_id).
+    const filteredIds = new Set(getFiltered().map(r => r.toolkitItemId).filter(Boolean));
+    const vRows  = (state.rawVRows  || []).filter(v => filteredIds.has(v.toolkit_item_id));
+    const tkIds  = new Set(vRows.map(v => v.toolkit_item_id));
+    const tkRows = (state.rawTkRows || []).filter(t => tkIds.has(t.id));
+
+    const exportedAt    = new Date();
+    const filterSummary = describeFilters();
+
+    const [pageHtml, sharedCss] = await Promise.all([
+      fetch(location.href).then(r => r.text()),
+      fetch('styles.css').then(r => r.text()),
+    ]);
+
+    let html = pageHtml;
+
+    // 1. Inline the shared stylesheet so the file is fully self-contained.
+    html = html.replace(
+      '<link rel="stylesheet" href="styles.css">',
+      '<style>\n/* === Inlined styles.css === */\n' + sharedCss + '\n</style>'
+    );
+
+    // 2. Drop the Supabase CDN — snapshot mode never creates a client, and
+    //    this keeps the file fully self-contained (works offline).
+    html = html.replace('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>', '');
+
+    // 3. Replace the config script with a snapshot bootstrap that sets
+    //    window.__SNAPSHOT__ before the main script runs. The page's own data
+    //    layer (fetchAllPaged / enterSnapshot) renders from it — no fake
+    //    client, no marker-based injection, no post-load lockdown script. The
+    //    config <script> is a stable anchor that already sits just before the
+    //    main script, so this survives edits to the page's head/script order.
+    const snapshotJson = JSON.stringify({
+      exportedAt: exportedAt.toISOString(),
+      filterSummary,
+      vRows, tkRows,
+    }).replace(/</g, '\\u003c');   // escape every '<' so an embedded closing-script tag can't end the block early
+    const bootstrap =
+      '<' + "script>document.documentElement.classList.add('has-token');" +
+      'window.__SNAPSHOT__ = ' + snapshotJson + ';<\/script>';
+    html = html.replace('<script src="config.local.js"><\/script>', bootstrap);
+
+    // 4. Trigger download.
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    const stamp = exportedAt.toISOString().slice(0,16).replace('T','_').replace(/:/g,'');
+    a.download = 'program-dashboard_' + stamp + '.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (err) {
+    console.error('exportHTML failed:', err);
+    if (btn) { btn.textContent = 'Export failed'; setTimeout(() => { btn.textContent = origText; }, 2000); }
+  } finally {
+    if (btn) { btn.disabled = false; if (btn.textContent === 'Exporting…') btn.textContent = origText; }
+  }
+}
+
+// ─── ESCAPE HELPERS ───
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escapeAttr(s) { return escapeHtml(s); }
+</script>
+</body>
+</html>

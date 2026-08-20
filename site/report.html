@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Report — Marketing Ops</title>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ REPORT VIEWER — page-specific, on top of shared Overclock styles ━━━ */
+
+/* Layout shell */
+.rv-page{
+  max-width:1180px;margin:0 auto;
+  padding:32px 30px 48px;
+}
+
+/* Hero — blue eyebrow, Sora bold title, meta strip below */
+.rv-hero{
+  padding:0 0 22px;
+  border-bottom:1px solid var(--line-light);
+  margin-bottom:24px;
+}
+.rv-eyebrow{
+  font-family:var(--mono);font-size:10px;
+  letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--blue);margin-bottom:10px;font-weight:500;
+}
+.rv-title{
+  font-family:var(--display);font-weight:700;
+  font-size:32px;line-height:1.08;letter-spacing:-0.02em;
+  color:var(--ink);margin:0;
+}
+.rv-title em{font-style:normal;color:var(--blue)}
+.rv-meta{
+  display:flex;flex-wrap:wrap;gap:18px;
+  margin-top:12px;
+  font-family:var(--mono);font-size:11px;
+  color:var(--gray-mid);letter-spacing:0.03em;
+}
+.rv-meta strong{color:var(--ink);font-weight:600}
+
+/* Meta strip — replaces the old 240px sticky rail */
+.rv-meta-strip{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+  gap:14px;
+  margin-bottom:22px;
+}
+.rv-meta-block{
+  background:var(--white);
+  border:1px solid var(--hair);
+  border-radius:5px;
+  padding:14px 16px;
+  box-shadow:var(--elev);
+}
+.rv-meta-eyebrow{
+  font-family:var(--mono);font-size:9px;
+  letter-spacing:0.20em;text-transform:uppercase;
+  color:var(--blue-deep);margin-bottom:8px;font-weight:500;
+}
+.rv-filter-chips{display:flex;flex-wrap:wrap;gap:5px}
+.rv-filter-chip{
+  font-family:var(--mono);font-size:10px;
+  background:var(--blue-soft);color:var(--blue-deep);
+  padding:3px 8px;border-radius:3px;letter-spacing:0.04em;
+}
+.rv-filter-chip.empty{
+  background:var(--off-white);color:var(--gray-soft);font-style:italic;
+}
+.rv-meta-text{
+  font-size:12.5px;line-height:1.5;color:var(--gray-mid);
+}
+.rv-status-pill{
+  display:inline-block;
+  font-family:var(--mono);font-size:9.5px;
+  letter-spacing:0.16em;text-transform:uppercase;font-weight:600;
+  padding:4px 9px;border-radius:3px;
+  background:var(--blue-soft);color:var(--blue-deep);
+}
+.rv-status-pill.approved_sent{background:rgba(26,122,74,0.12);color:var(--green)}
+.rv-status-pill.rejected{background:rgba(192,57,43,0.12);color:var(--red)}
+.rv-status-pill.pending,
+.rv-status-pill.in_progress,
+.rv-status-pill.ready_for_review{background:var(--orange-soft);color:var(--orange-deep)}
+
+/* Report card — same pattern as the dashboard's .report cells */
+.rv-card{
+  background:var(--white);
+  border:1px solid var(--hair);
+  border-radius:6px;
+  box-shadow:var(--elev);
+  overflow:hidden;
+  margin-bottom:18px;
+}
+.rv-card-head{
+  padding:14px 22px 12px;
+  border-bottom:1px solid var(--line-light);
+}
+.rv-card-eyebrow{
+  font-family:var(--mono);font-size:9px;
+  letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--blue-deep);margin-bottom:5px;font-weight:500;
+}
+.rv-card-title{
+  font-family:var(--display);font-size:17px;color:var(--ink);
+  font-weight:700;letter-spacing:-0.01em;margin:0;
+}
+
+/* The agent's HTML body. Class is .report-body (DOMPurify-sanitized) — sized
+   inside the card. Default styles + the .r-* vocabulary classes live here. */
+.report-body{
+  padding:20px 22px;
+  font-size:14px;line-height:1.6;color:var(--ink);
+}
+.report-body h3{
+  font-family:var(--display);font-weight:700;font-size:17px;
+  color:var(--ink);margin:20px 0 10px;letter-spacing:-0.01em;
+}
+.report-body h3:first-child{margin-top:0}
+.report-body p{margin:0 0 12px}
+.report-body strong{color:var(--ink);font-weight:600}
+.report-body em{font-style:italic;color:var(--gray-mid)}
+.report-body ul,.report-body ol{margin:8px 0 14px 22px;padding:0}
+.report-body li{margin:4px 0}
+.report-body small{font-size:11.5px;color:var(--gray-mid);line-height:1.5}
+.report-body code{
+  font-family:var(--mono);font-size:12px;
+  background:var(--off-white);color:var(--blue-deep);
+  padding:1px 6px;border-radius:3px;
+}
+
+/* Tables */
+.report-body table{
+  width:100%;border-collapse:collapse;
+  font-size:12.5px;margin:14px 0 18px;
+  border:1px solid var(--line-light);border-radius:4px;overflow:hidden;
+}
+.report-body thead th{
+  font-family:var(--mono);font-size:9.5px;
+  letter-spacing:0.10em;text-transform:uppercase;font-weight:600;
+  text-align:left;padding:10px 14px;
+  background:var(--ink);color:#fff;
+}
+.report-body tbody td{
+  padding:9px 14px;border-bottom:1px solid var(--line-light);
+  font-variant-numeric:tabular-nums;
+}
+.report-body tbody tr:last-child td{border-bottom:none}
+.report-body tbody tr:nth-child(even){background:var(--blue-tint)}
+
+/* ━━━ Vocabulary v2 — KPI tiles, deltas, callouts, total rows ━━━ */
+/* Agent emits these classes; viewer styles them in the Overclock palette so
+   the agent never inlines a hex color. See prompts/report-builder.md. */
+
+.report-body .r-eyebrow{
+  font-family:var(--mono);font-size:10px;
+  letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--blue-deep);margin:18px 0 4px;font-weight:600;
+}
+.report-body .r-eyebrow + h3{margin-top:0}
+
+.report-body .r-kpi-row{
+  display:grid;gap:12px;margin:14px 0 22px;
+  grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
+}
+.report-body .r-kpi{
+  background:var(--white);border:1px solid var(--line-light);
+  border-radius:5px;padding:14px 16px 13px;
+  display:flex;flex-direction:column;gap:4px;
+  position:relative;overflow:hidden;
+}
+.report-body .r-kpi::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--blue);
+}
+.report-body .r-kpi-row .r-kpi:nth-child(2)::before{background:var(--blue-bright)}
+.report-body .r-kpi-row .r-kpi:nth-child(3)::before{background:var(--orange)}
+.report-body .r-kpi-row .r-kpi:nth-child(4)::before{background:var(--teal,#14A8AD)}
+.report-body .r-kpi-lbl{
+  font-family:var(--mono);font-size:9px;
+  letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--gray-mid);margin-top:2px;
+}
+.report-body .r-kpi-val{
+  font-family:var(--display);font-weight:700;
+  font-size:24px;line-height:1.05;color:var(--ink);
+  font-variant-numeric:tabular-nums;letter-spacing:-0.02em;
+}
+.report-body .r-kpi-delta{
+  font-family:var(--mono);font-size:10.5px;
+  letter-spacing:0.04em;margin-top:2px;
+}
+
+/* Semantic delta colors — work on .r-kpi-delta, on <td>, or on <span> in prose */
+.report-body .r-up{color:var(--green);font-weight:600}
+.report-body .r-down{color:var(--red);font-weight:600}
+.report-body .r-flat{color:var(--gray-mid)}
+
+/* Data-quality / scope callout */
+.report-body .r-callout{
+  background:var(--orange-soft);
+  border-left:3px solid var(--orange);
+  border-radius:3px;
+  padding:12px 16px;margin:16px 0;
+  font-size:13px;line-height:1.55;color:var(--ink);
+}
+.report-body .r-callout-lbl{
+  font-family:var(--mono);font-size:9px;
+  letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--orange-deep);margin-bottom:4px;
+  display:block;font-weight:700;
+}
+
+/* TOTAL / subtotal row */
+.report-body table tfoot td,
+.report-body table tr.r-total td{
+  font-weight:700;
+  border-top:2px solid var(--ink);
+  background:var(--blue-tint);
+}
+
+/* Narrative card body */
+.rv-narrative{
+  padding:20px 22px;
+  font-size:14px;line-height:1.65;color:var(--ink);
+}
+.rv-narrative p{margin:0 0 14px}
+.rv-narrative p:last-child{margin-bottom:0}
+.rv-narrative h2,
+.rv-narrative h3{
+  font-family:var(--display);font-weight:700;font-size:16px;
+  color:var(--ink);margin:18px 0 8px;letter-spacing:-0.01em;
+}
+.rv-narrative h2:first-child,
+.rv-narrative h3:first-child{margin-top:0}
+.rv-narrative strong{color:var(--ink);font-weight:600}
+.rv-narrative em{font-style:italic}
+.rv-narrative ul,.rv-narrative ol{margin:8px 0 14px 22px}
+
+/* Loading + error */
+.rv-loading,.rv-error{
+  text-align:center;padding:80px 32px;
+  font-family:var(--mono);font-size:11px;letter-spacing:0.10em;
+  text-transform:uppercase;color:var(--gray-mid);
+}
+.rv-error{color:var(--red)}
+
+/* Footer */
+.rv-footer{
+  max-width:1180px;margin:0 auto;
+  padding:0 30px 36px;
+  font-family:var(--mono);font-size:10px;
+  color:var(--gray-soft);letter-spacing:0.05em;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
+}
+
+@media(max-width:900px){
+  .rv-page{padding:24px 18px 36px}
+  .rv-title{font-size:24px}
+  .rv-meta-strip{grid-template-columns:1fr}
+  .rv-footer{padding-left:18px;padding-right:18px}
+}
+</style>
+</head>
+<body>
+
+<!-- Shared dark nav band — brand mark only, no clickable links (works for
+     anonymous email-link viewers and signed-in users alike). -->
+<header class="nav">
+  <a class="brand" href="/">MARKETING <em>OPS</em></a>
+  <div class="nav-right">
+    <span class="status-pill"><span class="dot"></span>Custom Report</span>
+  </div>
+</header>
+
+<div class="rv-page">
+  <section class="rv-hero">
+    <div class="rv-eyebrow">Custom Report</div>
+    <h1 class="rv-title" id="rvTitle">Loading…</h1>
+    <div class="rv-meta" id="rvMeta"></div>
+  </section>
+
+  <section class="rv-meta-strip" id="rvMetaStrip"></section>
+
+  <div id="rvContent">
+    <div class="rv-loading">Loading report</div>
+  </div>
+</div>
+
+<footer class="rv-footer">
+  <div>Marketing Ops · Custom Report Artifact</div>
+  <div id="rvBuiltStamp"></div>
+</footer>
+
+<script>
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;"><h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const { createClient } = supabase;
+const sb = createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function getReportIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('id') || '';
+}
+
+async function loadReport() {
+  const id = getReportIdFromUrl();
+  if (!id) {
+    document.getElementById('rvTitle').textContent = 'No report ID';
+    document.getElementById('rvContent').innerHTML = '<div class="rv-error">Missing ?id=… in the URL.</div>';
+    return;
+  }
+  try {
+    const { data, error } = await sb
+      .from('report_requests')
+      .select('id, title, description, requester_name, requester_email, status, intake_filters, report_html, report_narrative, report_filters_spec, built_at, created_at, email_sent_at')
+      .eq('id', id)
+      .single();
+    if (error || !data) throw new Error(error?.message || 'Report not found');
+    renderReport(data);
+  } catch (e) {
+    document.getElementById('rvTitle').textContent = 'Failed to load';
+    document.getElementById('rvContent').innerHTML = `<div class="rv-error">${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function renderReport(r) {
+  document.title = `${r.title} — Marketing Ops`;
+  document.getElementById('rvTitle').textContent = r.title;
+
+  // Meta strip below the title: requester · built date · status pill
+  const builtWhen = r.built_at ? new Date(r.built_at).toLocaleString() : null;
+  const statusLabel = (r.status || '').replace(/_/g, ' ');
+  const metaBits = [];
+  if (r.requester_name) metaBits.push(`<span>Requested by <strong>${escapeHtml(r.requester_name)}</strong></span>`);
+  if (builtWhen)        metaBits.push(`<span>Built <strong>${escapeHtml(builtWhen)}</strong></span>`);
+  metaBits.push(`<span class="rv-status-pill ${escapeHtml(r.status || '')}">${escapeHtml(statusLabel)}</span>`);
+  document.getElementById('rvMeta').innerHTML = metaBits.join('');
+
+  // If the report hasn't been built yet, show a placeholder.
+  if (!r.report_html) {
+    document.getElementById('rvMetaStrip').innerHTML = '';
+    document.getElementById('rvContent').innerHTML = `
+      <div class="rv-error">
+        This report hasn't been built yet (status: <strong>${escapeHtml(r.status)}</strong>).<br>
+        Check back once the admin team has built and approved it.
+      </div>`;
+    return;
+  }
+
+  // Scope chips from report_filters_spec (read-only in v1)
+  const spec = r.report_filters_spec || {};
+  const chips = [];
+  if (Array.isArray(spec.year) && spec.year.length) chips.push(`year: ${spec.year.join(', ')}`);
+  if (spec.brand)    chips.push(`brand: ${spec.brand}`);
+  if (spec.category) chips.push(`category: ${spec.category}`);
+  if (spec.wave)     chips.push(`wave: ${spec.wave}`);
+  const chipsHtml = chips.length
+    ? chips.map(c => `<span class="rv-filter-chip">${escapeHtml(c)}</span>`).join('')
+    : '<span class="rv-filter-chip empty">no scope filters applied</span>';
+
+  // Meta strip blocks (Scope, Original request, optional Email)
+  const metaStripBlocks = [
+    `<div class="rv-meta-block">
+       <div class="rv-meta-eyebrow">Scope</div>
+       <div class="rv-filter-chips">${chipsHtml}</div>
+     </div>`,
+    `<div class="rv-meta-block">
+       <div class="rv-meta-eyebrow">Original request</div>
+       <div class="rv-meta-text">${escapeHtml(r.description || '')}</div>
+     </div>`
+  ];
+  if (r.email_sent_at) {
+    metaStripBlocks.push(
+      `<div class="rv-meta-block">
+         <div class="rv-meta-eyebrow">Delivery</div>
+         <div class="rv-meta-text">Emailed ${escapeHtml(new Date(r.email_sent_at).toLocaleString())}</div>
+       </div>`
+    );
+  }
+  document.getElementById('rvMetaStrip').innerHTML = metaStripBlocks.join('');
+
+  const reportHtml = DOMPurify.sanitize(r.report_html, { ADD_ATTR: ['class', 'colspan', 'rowspan'] });
+  const narrativeHtml = r.report_narrative
+    ? DOMPurify.sanitize(marked.parse(r.report_narrative, { breaks: true, gfm: true }))
+    : '';
+
+  const narrativeCard = narrativeHtml
+    ? `<section class="rv-card">
+         <div class="rv-card-head">
+           <div class="rv-card-eyebrow">Summary</div>
+           <h2 class="rv-card-title">What this means</h2>
+         </div>
+         <div class="rv-narrative">${narrativeHtml}</div>
+       </section>`
+    : '';
+
+  document.getElementById('rvContent').innerHTML = `
+    <section class="rv-card">
+      <div class="report-body">${reportHtml}</div>
+    </section>
+    ${narrativeCard}
+  `;
+
+  if (builtWhen) {
+    document.getElementById('rvBuiltStamp').textContent = 'Built ' + builtWhen;
+  }
+}
+
+loadReport();
+</script>
+
+</body>
+</html>

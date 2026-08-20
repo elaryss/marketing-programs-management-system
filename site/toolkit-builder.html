@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toolkit Builder — Overclock Hub</title>
+
+<!-- Anti-flash auth peek: if a Supabase token is already in localStorage,
+     skip the gate immediately so it doesn't flash on navigation. -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="dns-prefetch" href="https://YOUR-PROJECT-REF.supabase.co">
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ TOOLKIT BUILDER · page-specific styles ━━━ */
+
+:root{ --teal:#14A8AD; --rail:#0c1019; --prm:#1A7A4A; --lux:#1E3FD6; }
+
+/* LAYOUT — dark rail FIXED on the left, light main flows on the right */
+.layout{display:flex;align-items:flex-start;padding-left:320px;min-height:calc(100vh - 54px)}
+.main{flex:1;min-width:0;padding:0 30px 60px}
+
+.rail{
+  width:320px;
+  background:var(--rail);color:#e6e9ef;
+  position:fixed;left:0;top:54px;bottom:0;
+  overflow-y:auto;
+  padding:24px 22px 32px;
+  border-right:1px solid rgba(255,255,255,0.07);
+  display:flex;flex-direction:column;gap:20px;
+  z-index:5;
+}
+.rail::-webkit-scrollbar{width:6px}
+.rail::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+
+.rail-section{display:flex;flex-direction:column;gap:10px}
+.rail-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--orange);font-weight:600;margin-bottom:2px;
+}
+.rail-divider{height:1px;background:rgba(255,255,255,0.08);margin:4px 0}
+
+.rfield{display:flex;flex-direction:column;gap:5px}
+.rfield label{font-size:10.5px;color:rgba(230,233,239,0.65);font-weight:400;letter-spacing:0.02em}
+.rfield input, .rfield select{
+  background:#161b27;border:1px solid rgba(255,255,255,0.14);border-radius:4px;
+  color:#fff;font-family:var(--mono);font-size:11px;padding:8px 11px;
+  outline:none;width:100%;transition:border-color 0.15s,background 0.15s;
+}
+.rfield input::placeholder{color:rgba(230,233,239,0.32)}
+.rfield input:focus, .rfield select:focus{border-color:var(--blue-bright);background:#1a2030}
+.rfield select{cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239aa3b2'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:26px;
+}
+.rfield select option{background:#161b27;color:#fff}
+
+.rfield-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* Segmented control: FY / Wave / Tier toggles */
+.seg{
+  display:flex;border:1px solid rgba(255,255,255,0.14);border-radius:4px;overflow:hidden;background:#161b27;
+}
+.seg button{
+  flex:1;background:#161b27;border:none;padding:8px 6px;
+  font-family:var(--mono);font-size:10px;cursor:pointer;color:#aeb6c2;
+  transition:background 0.15s,color 0.15s;
+  border-right:1px solid rgba(255,255,255,0.10);
+  letter-spacing:0.06em;text-transform:uppercase;
+}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--blue);color:#fff;font-weight:500}
+.seg button.active.prm{background:var(--prm)}
+.seg button.active.lux{background:var(--lux)}
+
+/* Stepper */
+.stepper-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stepper-row .lbl{font-size:11px;color:rgba(230,233,239,0.7)}
+.stepper{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.14);border-radius:4px;overflow:hidden;background:#161b27}
+.stepper button{
+  background:transparent;border:none;color:#fff;width:26px;height:26px;cursor:pointer;font-size:14px;line-height:1;
+  font-family:var(--mono);transition:background 0.1s;
+}
+.stepper button:hover{background:rgba(78,107,255,0.18)}
+.stepper .val{
+  width:30px;text-align:center;font-family:var(--mono);font-size:12px;color:var(--blue-bright);
+  border:none;background:transparent;
+}
+
+/* Toggle switch */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.toggle-row label{font-size:11px;color:rgba(230,233,239,0.7);cursor:pointer}
+.toggle{
+  position:relative;width:34px;height:18px;background:#2a3247;border:1px solid rgba(255,255,255,0.14);border-radius:10px;cursor:pointer;
+  transition:background 0.15s;
+}
+.toggle::after{
+  content:'';position:absolute;left:1.5px;top:1.5px;width:13px;height:13px;background:#fff;border-radius:50%;
+  transition:transform 0.15s;
+}
+.toggle.on{background:var(--orange)}
+.toggle.on::after{transform:translateX(16px)}
+
+/* Suite checks */
+.checks{display:flex;flex-direction:column;gap:6px}
+.check-item{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11.5px;color:rgba(230,233,239,0.78)}
+.check-item input{accent-color:var(--orange);width:13px;height:13px;cursor:pointer}
+
+/* Rail buttons */
+.rail-actions{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.btn-add{
+  background:var(--orange);color:#241000;border:none;border-radius:4px;
+  padding:10px 14px;font-family:var(--display);font-size:13px;font-weight:600;cursor:pointer;
+  transition:background 0.15s,box-shadow 0.15s;
+}
+.btn-add:hover{background:var(--orange-bright);box-shadow:0 6px 14px rgba(255,122,26,0.28)}
+.btn-copy-setup{
+  background:transparent;color:#cdd4df;border:1px solid rgba(255,255,255,0.18);border-radius:4px;
+  padding:8px 14px;font-family:var(--mono);font-size:10px;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;
+  transition:border-color 0.15s,color 0.15s;
+}
+.btn-copy-setup:hover{color:#fff;border-color:var(--blue-bright)}
+
+/* ━━━ MAIN AREA ━━━ */
+
+.hero{padding:30px 0 18px}
+.hero-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gray-mid);margin-bottom:10px;
+}
+.hero-title{
+  font-family:var(--display);font-size:32px;font-weight:700;
+  color:var(--ink);letter-spacing:-0.02em;line-height:1.04;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+}
+.hero-title em{font-style:normal;font-weight:700;color:var(--orange)}
+.live-tag{
+  display:inline-block;background:var(--orange);color:#241000;
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;
+  padding:4px 9px;border-radius:3px;text-transform:uppercase;font-weight:600;
+}
+.hero-sub{font-size:12.5px;color:var(--gray-mid);margin-top:8px;max-width:720px;line-height:1.6}
+
+/* Action bar */
+.action-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:14px 0 0;border-bottom:1px solid var(--line-light);padding-bottom:14px;margin-bottom:20px;
+}
+.action-bar .left{display:flex;gap:10px;align-items:center}
+.action-bar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn-primary{
+  background:var(--blue);color:#fff;border:none;border-radius:5px;
+  padding:11px 22px;font-family:var(--display);font-size:13px;font-weight:600;cursor:pointer;
+  transition:background 0.15s,box-shadow 0.15s;display:inline-flex;align-items:center;gap:8px;
+}
+.btn-primary:hover{background:var(--blue-bright);box-shadow:0 8px 18px rgba(30,63,214,0.22)}
+.btn-primary:disabled{opacity:0.55;cursor:not-allowed;box-shadow:none}
+.btn-save{background:var(--green);color:#fff}
+.btn-save:hover{background:#23A263;box-shadow:0 8px 18px rgba(26,122,74,0.28)}
+.btn-secondary{
+  background:#fff;border:1px solid var(--line-light);color:var(--ink);
+  padding:10px 16px;border-radius:5px;font-family:var(--mono);font-size:11px;cursor:pointer;
+  letter-spacing:0.06em;text-transform:uppercase;
+  transition:border-color 0.15s,color 0.15s;
+}
+.btn-secondary:hover{border-color:var(--blue);color:var(--blue-deep)}
+.btn-secondary.danger:hover{border-color:var(--red);color:var(--red)}
+
+/* Section heads */
+.section-head{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gray-mid);margin:18px 0 10px;font-weight:600;
+}
+
+/* Brands queue */
+.brands-grid{display:flex;flex-direction:column;gap:8px}
+.brands-empty{
+  background:#fff;border:1px dashed var(--line-light);border-radius:6px;
+  padding:36px 24px;text-align:center;color:var(--gray-soft);
+}
+.brands-empty p:first-child{font-family:var(--display);font-size:18px;color:var(--ink);font-weight:700;margin-bottom:4px}
+.brands-empty p:last-child{font-size:12px}
+
+.brand-card{
+  background:#fff;border:1px solid var(--line-light);border-radius:6px;
+  padding:14px 16px;display:flex;align-items:center;gap:14px;
+  box-shadow:var(--elev);transition:border-color 0.15s,box-shadow 0.15s;
+}
+.brand-card:hover{border-color:var(--blue-bright)}
+
+.tier-badge{
+  width:44px;height:44px;flex-shrink:0;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:0.04em;
+}
+.tier-badge.prm{background:rgba(26,122,74,0.12);color:var(--prm)}
+.tier-badge.lux{background:var(--blue-soft);color:var(--blue-deep)}
+
+.brand-info{flex:1;min-width:0}
+.brand-name{font-size:14px;font-weight:700;color:var(--ink);font-family:var(--display)}
+.brand-meta{font-size:11px;color:var(--gray-mid);margin-top:2px}
+.brand-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pill{
+  display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;
+}
+.pill.display{background:rgba(20,168,173,0.12);color:#006a70}
+.pill.paper{background:var(--blue-soft);color:var(--blue-deep)}
+.pill.premium{background:var(--orange-soft);color:var(--orange-deep)}
+.pill.wear{background:rgba(181,118,14,0.14);color:var(--amber)}
+
+.brand-actions{display:flex;gap:4px;flex-shrink:0}
+.btn-icon{
+  background:transparent;border:1px solid var(--line-light);border-radius:4px;
+  width:30px;height:30px;cursor:pointer;color:var(--gray-mid);font-size:14px;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:border-color 0.15s,color 0.15s,background 0.15s;
+}
+.btn-icon:hover{border-color:var(--blue);color:var(--blue-deep);background:var(--blue-tint)}
+.btn-icon.danger:hover{border-color:var(--red);color:var(--red);background:rgba(192,57,43,0.06)}
+
+/* Summary bar */
+.summary-bar{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 12px;
+}
+.stat-card{
+  background:#fff;border:1px solid var(--line-light);border-radius:6px;
+  padding:14px 16px;text-align:left;box-shadow:var(--elev);position:relative;overflow:hidden;
+}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--orange)}
+.stat-card:nth-child(2)::before{background:var(--blue)}
+.stat-card:nth-child(3)::before{background:var(--teal)}
+.stat-card:nth-child(4)::before{background:var(--blue-bright)}
+.stat-card:nth-child(5)::before{background:var(--orange-bright)}
+.stat-num{font-family:var(--display);font-size:24px;font-weight:700;color:var(--ink);line-height:1}
+.stat-label{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray-mid);margin-top:7px}
+
+/* Generated items */
+.no-output{
+  background:#fff;border:1px dashed var(--line-light);border-radius:6px;
+  padding:36px 24px;text-align:center;color:var(--gray-soft);font-size:12px;
+}
+.brand-output{
+  background:#fff;border:1px solid var(--line-light);border-radius:6px;
+  overflow:hidden;box-shadow:var(--elev);margin-bottom:14px;
+}
+.brand-output-header{
+  display:flex;align-items:center;gap:14px;padding:14px 18px;
+  background:var(--blue-tint);border-bottom:1px solid var(--line-light);
+}
+.brand-output-name{font-family:var(--display);font-size:14px;font-weight:700;color:var(--ink)}
+.brand-output-meta{font-size:11px;color:var(--gray-mid);margin-top:1px}
+.brand-output-count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--gray-mid)}
+
+.brand-output table{width:100%;border-collapse:collapse}
+.brand-output th{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray-mid);
+  text-align:left;padding:10px 14px;border-bottom:1px solid var(--line-light);font-weight:600;
+}
+.brand-output td{
+  padding:10px 14px;border-bottom:1px solid var(--hair);font-size:12px;color:var(--ink);vertical-align:middle;
+}
+.brand-output tr:last-child td{border-bottom:none}
+.bo-seq{font-family:var(--mono);font-size:10.5px;color:var(--gray-soft);width:40px}
+.bo-desc{font-weight:500;color:var(--ink)}
+.bo-sub{font-size:11px;color:var(--gray-mid)}
+.bo-pos{font-family:var(--mono);font-size:10.5px;color:var(--blue-deep)}
+
+.cat-badge{
+  display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;
+  padding:3px 8px;border-radius:3px;font-weight:600;
+}
+.cat-display{background:rgba(20,168,173,0.12);color:#006a70}
+.cat-paper{background:var(--blue-soft);color:var(--blue-deep)}
+.cat-premium{background:var(--orange-soft);color:var(--orange-deep)}
+
+.status-pill{
+  display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:0.08em;
+  padding:3px 8px;border-radius:3px;
+}
+.st-include{background:rgba(26,122,74,0.12);color:#155a36}
+.st-tbd{background:rgba(181,118,14,0.14);color:var(--amber)}
+.st-q{background:#eef1f5;color:var(--gray-mid)}
+
+/* Success modal */
+.modal-back{
+  position:fixed;inset:0;background:rgba(10,13,20,0.55);z-index:999;display:none;
+  align-items:center;justify-content:center;padding:24px;
+}
+.modal-back.open{display:flex}
+.modal{
+  background:#fff;border-radius:8px;max-width:480px;width:100%;
+  padding:30px 32px;box-shadow:var(--elev-hi);
+}
+.modal-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:var(--green);font-weight:600;margin-bottom:8px}
+.modal-title{font-family:var(--display);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;letter-spacing:-0.01em}
+.modal-sub{font-size:13px;color:var(--gray-mid);margin-bottom:22px;line-height:1.5}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+
+/* Responsive */
+@media(max-width:980px){
+  .layout{flex-direction:column;padding-left:0}
+  .rail{position:static;width:100%;height:auto;top:0;border-right:none;border-bottom:1px solid rgba(255,255,255,0.07);max-height:60vh}
+  .main{padding:0 20px 40px}
+  .summary-bar{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Toolkit Builder</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="5" y="11" width="14" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 1 1 8 0v4"/>
+    </svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool. Live database.</div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email">
+    </div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()">
+      <button class="gate-toggle" onclick="togglePwdVisibility()" aria-label="Toggle password visibility" tabindex="-1">
+        <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations &middot; Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link active" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser" title="Signed in"></span>
+    <a class="btn ghost" href="toolkit-manager.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      Manage Items
+    </a>
+    <button class="btn ghost" onclick="signOut()" title="Sign out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sign Out
+    </button>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- ═══════════ RAIL (config) ═══════════ -->
+  <aside class="rail">
+
+    <!-- Pre-Buy Program -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Program</div>
+      <div class="rfield">
+        <label>Fiscal Year</label>
+        <div class="seg" id="seg-fy">
+          <button data-val="F24">F24</button>
+          <button data-val="F25">F25</button>
+          <button data-val="F26" class="active">F26</button>
+          <button data-val="F28">F28</button>
+        </div>
+      </div>
+      <div class="rfield">
+        <label>Season</label>
+        <div class="seg" id="seg-wave">
+          <button data-val="HL" class="active">HL</button>
+          <button data-val="SM">SM</button>
+          <button data-val="SP">SP</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:rgba(230,233,239,0.5);margin-top:2px">
+        Writes to <span style="font-family:var(--mono);color:var(--orange)">pre_buy_program</span> as <span id="pbpPreview" style="font-family:var(--mono);color:#fff">F26 HL Buy</span>
+      </div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <!-- Brand -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Brand</div>
+      <div class="rfield">
+        <label>Select brand</label>
+        <select id="f-brand-select" onchange="onBrandSelect()">
+          <option value="">— choose a brand —</option>
+        </select>
+      </div>
+      <div class="rfield" id="custom-brand-field" style="display:none">
+        <label>Custom brand name</label>
+        <input type="text" id="f-brand-custom" placeholder="Enter brand name">
+      </div>
+      <div class="rfield" id="custom-brand-tier" style="display:none">
+        <label>Custom brand tier</label>
+        <div class="seg" id="seg-custom-tier">
+          <button data-val="PRM" class="active prm">PRM</button>
+          <button data-val="LUX" class="lux">LUX</button>
+        </div>
+      </div>
+      <div class="rfield">
+        <label>Program name</label>
+        <input type="text" id="f-program" placeholder="e.g. Holiday Gifting">
+      </div>
+      <div class="rfield-row">
+        <div class="rfield">
+          <label>Focus period</label>
+          <select id="f-period"></select>
+        </div>
+        <div class="rfield">
+          <label>Tier</label>
+          <div class="seg" id="seg-tier">
+            <button data-val="PRM" class="active prm">PRM</button>
+            <button data-val="LUX" class="lux">LUX</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <!-- Displays -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Displays</div>
+      <div class="stepper-row">
+        <span class="lbl">Display placeholders</span>
+        <div class="stepper">
+          <button onclick="step('displays',-1)">−</button>
+          <span class="val" id="val-displays">3</span>
+          <button onclick="step('displays',1)">+</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:rgba(230,233,239,0.4);margin-top:2px">0 = none · 3 = Display + Pole Topper + Enhancer</div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <!-- Paper Suite -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Paper Suite</div>
+      <div id="paper-prm" class="checks">
+        <label class="check-item"><input type="checkbox" id="p-sleeve" checked><span>Case Sleeve</span></label>
+        <label class="check-item"><input type="checkbox" id="p-card" checked><span>Case Card</span></label>
+        <label class="check-item"><input type="checkbox" id="p-stack" checked><span>Case Stack Card</span></label>
+        <label class="check-item"><input type="checkbox" id="p-necker" checked><span>Necker</span></label>
+      </div>
+      <div id="paper-lux" class="checks" style="display:none">
+        <label class="check-item"><input type="checkbox" id="l-sleeve" checked><span>Case Sleeve</span></label>
+        <label class="check-item"><input type="checkbox" id="l-card-mini" checked><span>Case Card Mini</span></label>
+        <label class="check-item"><input type="checkbox" id="l-shelf" checked><span>Shelf Talker</span></label>
+        <label class="check-item"><input type="checkbox" id="l-necker" checked><span>Necker (String Tie)</span></label>
+      </div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <!-- Premium -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Premium</div>
+      <div class="stepper-row">
+        <span class="lbl">Premium placeholders</span>
+        <div class="stepper">
+          <button onclick="step('pre',-1)">−</button>
+          <span class="val" id="val-pre">3</span>
+          <button onclick="step('pre',1)">+</button>
+        </div>
+      </div>
+      <div class="toggle-row" id="wearable-row" style="margin-top:8px">
+        <label for="tog-wear">Wearable (M / L / XL / XXL)</label>
+        <button class="toggle on" id="tog-wear" onclick="toggleWear()" aria-pressed="true"></button>
+      </div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <!-- Statuses -->
+    <div class="rail-section">
+      <div class="rail-eyebrow">Default Statuses</div>
+      <div class="rfield-row">
+        <div class="rfield">
+          <label>Display</label>
+          <select id="s-display">
+            <option value="include" selected>include</option>
+            <option value="TBD">TBD</option>
+            <option value="?">? placeholder</option>
+          </select>
+        </div>
+        <div class="rfield">
+          <label>Premium</label>
+          <select id="s-pre-status">
+            <option value="include" selected>include</option>
+            <option value="TBD">TBD</option>
+            <option value="?">? placeholder</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail-divider"></div>
+
+    <div class="rail-actions">
+      <button class="btn-add" onclick="addBrand()">+ Add Brand</button>
+      <button class="btn-copy-setup" onclick="copySetup()" title="Keep program + period + suite, just clear the brand name">⟳ Copy setup — change brand only</button>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main class="main">
+
+    <section class="hero">
+      <div class="hero-eyebrow"><span class="chip warm" style="display:inline-block;width:22px;height:8px;margin-right:8px"></span>Toolkit Operations · Builder</div>
+      <h1 class="hero-title">Toolkit <em>Builder</em><span class="live-tag">Live</span></h1>
+      <p class="hero-sub">Spin up a whole new national program — pick a buy window, queue brands with their paper / display / premium suite, generate line items, and save the whole toolkit to Supabase in one shot.</p>
+    </section>
+
+    <div class="action-bar">
+      <div class="left">
+        <button class="btn-primary" onclick="generate()">Generate items →</button>
+      </div>
+      <div class="right">
+        <button class="btn-secondary" onclick="copyTSV()">⎘ Copy as TSV</button>
+        <button class="btn-secondary danger" onclick="clearAll()">Clear all</button>
+        <button class="btn-primary btn-save" id="btnSave" onclick="saveToSupabase()" disabled>Save to Supabase</button>
+      </div>
+    </div>
+
+    <!-- Brand queue -->
+    <div>
+      <div class="section-head">Brands in focus (<span id="brand-count">0</span>)</div>
+      <div class="brands-grid" id="brands-grid">
+        <div class="brands-empty">
+          <p>No brands yet</p>
+          <p>Pick a brand in the sidebar, configure the suite, then click "+ Add Brand".</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div id="summary-wrap" style="display:none">
+      <div class="section-head">Summary</div>
+      <div class="summary-bar">
+        <div class="stat-card"><div class="stat-num" id="s-brands">0</div><div class="stat-label">Brands</div></div>
+        <div class="stat-card"><div class="stat-num" id="s-total">0</div><div class="stat-label">Total items</div></div>
+        <div class="stat-card"><div class="stat-num" id="s-disp">0</div><div class="stat-label">Display</div></div>
+        <div class="stat-card"><div class="stat-num" id="s-paper">0</div><div class="stat-label">Paper</div></div>
+        <div class="stat-card"><div class="stat-num" id="s-pre">0</div><div class="stat-label">Premium</div></div>
+      </div>
+    </div>
+
+    <!-- Generated items -->
+    <div id="output-wrap">
+      <div class="section-head">Generated items</div>
+      <div class="no-output">Add brands and click Generate to see your line items here.</div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Success modal -->
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <div class="modal-eyebrow">Saved</div>
+    <div class="modal-title" id="modalTitle">Toolkit created</div>
+    <div class="modal-sub" id="modalSub"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="hideModal()">Build another</button>
+      <a class="btn-primary" id="modalView" href="toolkit-manager.html">View in Toolkit Manager</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIG + AUTH (mirror toolkit-manager.html pattern)
+// ============================================================
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;">'
+    + '<h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2>'
+    + '<p style="font-size:13px;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in your Supabase URL + anon key.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const { createClient } = supabase;
+const sb = createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const error = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { error.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  error.textContent = '';
+  const { data, error: authError } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (authError) {
+    document.getElementById('gateInput').classList.add('error');
+    error.textContent = authError.message.includes('Invalid') ? 'Wrong email or password' : authError.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  loadLookups();
+}
+function togglePwdVisibility() {
+  const i = document.getElementById('gateInput');
+  i.type = i.type === 'password' ? 'text' : 'password';
+}
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else { document.documentElement.classList.remove('has-token'); document.getElementById('emailInput').focus(); }
+});
+
+// ============================================================
+// STATE
+// ============================================================
+let allBrands = [];        // {id, name, category}
+let allItemTypes = [];     // {id, name, element_zone, default_category, sub_category}
+let itemTypeByName = {};   // name → id (lower-cased keys)
+let brands = [];           // queued brand configs
+let generatedRows = [];
+
+let fy = 'F26';
+let wave = 'HL';
+let currentTier = 'PRM';
+let customTier = 'PRM';
+let wearOn = true;
+const counts = { displays: 3, pre: 3 };
+
+const WAVE_TO_SHIPPING_WAVE = { HL: 'Nov/Dec', SM: 'Jul/Aug', SP: 'Mar/Apr' };
+
+// Focus-period options per season. Order matters — first entry is the default.
+const FOCUS_PERIODS = {
+  HL: ['Nov/Dec', 'Jan/Feb', 'Nov/Feb'],
+  SM: ['Jul/Aug', 'Sep/Oct', 'Jun/Oct'],
+  SP: ['Mar/Apr', 'May/Jun', 'Mar/Jun'],
+};
+
+// PRM + LUX suite definitions (mirror tools/program_builder.html)
+const PRM_PAPER = [
+  { id:'p-sleeve', label:'Case Sleeve',     subCat:'Case Sleeve w/Header - Standard', itemTypeName:'Case Sleeve' },
+  { id:'p-card',   label:'Case Card',       subCat:'Case Card',                       itemTypeName:'Case Card' },
+  { id:'p-stack',  label:'Case Stack Card', subCat:'Case Stack Card',                 itemTypeName:'Case Stack Card' },
+  { id:'p-necker', label:'Necker',          subCat:'Necker - Tombstone 1 Panel',      itemTypeName:'Necker' },
+];
+const LUX_PAPER = [
+  { id:'l-sleeve',    label:'Case Sleeve',         subCat:'Case Sleeve w/Header - Standard', itemTypeName:'Case Sleeve' },
+  { id:'l-card-mini', label:'Case Card Mini',      subCat:'Case Card - Mini 2S',             itemTypeName:'Case Card' },
+  { id:'l-shelf',     label:'Shelf Talker',        subCat:'Shelf Talker - 2 sided',          itemTypeName:'Shelf Talker' },
+  { id:'l-necker',    label:'Necker (String Tie)', subCat:'Necker - String-Tie 1 Panel',     itemTypeName:'Necker' },
+];
+const DISPLAY_LABELS = ['Display', 'Pole Topper', 'Display Enhancer'];
+
+// ============================================================
+// LOOKUPS
+// ============================================================
+async function loadLookups() {
+  try {
+    const [b, t] = await Promise.all([
+      sb.from('brands').select('id,name,category').order('name'),
+      sb.from('item_types').select('id,name,element_zone,default_category,sub_category').order('name'),
+    ]);
+    if (b.error) throw b.error;
+    if (t.error) throw t.error;
+    allBrands = b.data || [];
+    allItemTypes = t.data || [];
+    itemTypeByName = {};
+    allItemTypes.forEach(it => { itemTypeByName[it.name.toLowerCase()] = it.id; });
+    populateBrandSelect();
+    bindSegs();
+    updatePbpPreview();
+  } catch (e) {
+    console.error(e);
+    showToast('Failed to load lookups: ' + (e.message || e), 'error');
+  }
+}
+
+function populateBrandSelect() {
+  const sel = document.getElementById('f-brand-select');
+  const prm = allBrands.filter(b => (b.category || '').toUpperCase() === 'PRM');
+  const lux = allBrands.filter(b => (b.category || '').toUpperCase() === 'LUX');
+  const other = allBrands.filter(b => !['PRM','LUX'].includes((b.category || '').toUpperCase()));
+  const opt = b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`;
+  sel.innerHTML = '<option value="">— choose a brand —</option>'
+    + (prm.length ? `<optgroup label="Premium (PRM)">${prm.map(opt).join('')}</optgroup>` : '')
+    + (lux.length ? `<optgroup label="Luxury (LUX)">${lux.map(opt).join('')}</optgroup>` : '')
+    + (other.length ? `<optgroup label="Other">${other.map(opt).join('')}</optgroup>` : '')
+    + '<option value="__custom__">+ Custom brand…</option>';
+}
+
+// ============================================================
+// SEGMENTED CONTROLS
+// ============================================================
+function bindSegs() {
+  bindSeg('seg-fy', val => { fy = val; updatePbpPreview(); });
+  bindSeg('seg-wave', val => { wave = val; updatePbpPreview(); updateFocusPeriodOptions(); });
+  bindSeg('seg-tier', val => setTier(val));
+  bindSeg('seg-custom-tier', val => { customTier = val; });
+  updateFocusPeriodOptions();
+}
+
+// Repopulate the Focus period dropdown based on the active wave. Tries to
+// preserve the user's current pick if it's still valid for the new wave.
+function updateFocusPeriodOptions() {
+  const sel = document.getElementById('f-period');
+  if (!sel) return;
+  const opts = FOCUS_PERIODS[wave] || [];
+  const prev = sel.value;
+  sel.innerHTML = opts.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (opts.includes(prev)) sel.value = prev;
+}
+function bindSeg(id, cb) {
+  const seg = document.getElementById(id);
+  if (!seg) return;
+  seg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      seg.querySelectorAll('button').forEach(x => {
+        x.classList.remove('active');
+        // re-apply tier color classes if they exist on the button
+      });
+      b.classList.add('active');
+      cb(b.dataset.val);
+    });
+  });
+}
+function updatePbpPreview() {
+  document.getElementById('pbpPreview').textContent = `${fy} ${wave} Buy`;
+}
+
+function setTier(t) {
+  currentTier = t;
+  document.getElementById('paper-prm').style.display = t === 'PRM' ? '' : 'none';
+  document.getElementById('paper-lux').style.display = t === 'LUX' ? '' : 'none';
+  document.getElementById('wearable-row').style.display = t === 'PRM' ? '' : 'none';
+  counts.displays = t === 'PRM' ? 3 : 0;
+  counts.pre = t === 'PRM' ? 3 : 2;
+  document.getElementById('val-displays').textContent = counts.displays;
+  document.getElementById('val-pre').textContent = counts.pre;
+}
+
+function toggleWear() {
+  wearOn = !wearOn;
+  const b = document.getElementById('tog-wear');
+  b.classList.toggle('on', wearOn);
+  b.setAttribute('aria-pressed', wearOn);
+}
+
+function step(key, delta) {
+  const max = key === 'displays' ? 3 : 8;
+  counts[key] = Math.max(0, Math.min(max, counts[key] + delta));
+  document.getElementById('val-' + key).textContent = counts[key];
+}
+
+// ============================================================
+// BRAND DROPDOWN
+// ============================================================
+function onBrandSelect() {
+  const v = document.getElementById('f-brand-select').value;
+  const customField = document.getElementById('custom-brand-field');
+  const customTierField = document.getElementById('custom-brand-tier');
+  if (!v) {
+    customField.style.display = 'none';
+    customTierField.style.display = 'none';
+    return;
+  }
+  if (v === '__custom__') {
+    customField.style.display = '';
+    customTierField.style.display = '';
+    document.getElementById('f-brand-custom').focus();
+    return;
+  }
+  customField.style.display = 'none';
+  customTierField.style.display = 'none';
+  // Auto-pick tier from selected brand's category
+  const b = allBrands.find(x => x.id === v);
+  if (b && b.category) {
+    const t = b.category.toUpperCase();
+    if (t === 'PRM' || t === 'LUX') {
+      // Programmatically click the matching tier seg button
+      const seg = document.getElementById('seg-tier');
+      seg.querySelectorAll('button').forEach(btn => {
+        if (btn.dataset.val === t) btn.click();
+      });
+    }
+  }
+  document.getElementById('f-program').focus();
+}
+
+function getBrandPayload() {
+  const v = document.getElementById('f-brand-select').value;
+  if (!v) return null;
+  if (v === '__custom__') {
+    const name = document.getElementById('f-brand-custom').value.trim();
+    if (!name) return null;
+    return { id: null, name, category: customTier, isNew: true };
+  }
+  const b = allBrands.find(x => x.id === v);
+  if (!b) return null;
+  return { id: b.id, name: b.name, category: (b.category || currentTier).toUpperCase(), isNew: false };
+}
+
+// ============================================================
+// PAPER SUITE HELPERS
+// ============================================================
+function getPaperSuite(tier) {
+  const defs = tier === 'PRM' ? PRM_PAPER : LUX_PAPER;
+  return defs.filter(d => document.getElementById(d.id).checked);
+}
+
+// ============================================================
+// ADD / COPY / REMOVE BRAND
+// ============================================================
+function addBrand() {
+  const brand = getBrandPayload();
+  if (!brand) { showToast('Pick a brand first', 'error'); return; }
+  const program = document.getElementById('f-program').value.trim();
+  if (!program) { showToast('Enter a program name', 'error'); return; }
+  const period = document.getElementById('f-period').value.trim() || (currentTier === 'PRM' ? 'Nov/Dec' : 'Nov/Dec');
+
+  brands.push({
+    brand,
+    tier: currentTier,
+    program,
+    period,
+    displays: counts.displays,
+    pre: counts.pre,
+    wearable: currentTier === 'PRM' && wearOn,
+    paper: getPaperSuite(currentTier),
+    dispStatus: document.getElementById('s-display').value,
+    preStatus: document.getElementById('s-pre-status').value,
+  });
+
+  // Clear brand selection (keep the rest as setup for next brand)
+  document.getElementById('f-brand-select').value = '';
+  document.getElementById('f-brand-custom').value = '';
+  document.getElementById('custom-brand-field').style.display = 'none';
+  document.getElementById('custom-brand-tier').style.display = 'none';
+
+  renderBrands();
+  showToast(`${brand.name} added`);
+}
+
+function copySetup() {
+  document.getElementById('f-brand-select').value = '';
+  document.getElementById('f-brand-custom').value = '';
+  document.getElementById('custom-brand-field').style.display = 'none';
+  document.getElementById('custom-brand-tier').style.display = 'none';
+  showToast('Setup kept — pick a new brand');
+}
+
+function removeBrand(i) {
+  brands.splice(i, 1);
+  renderBrands();
+  // Reset generated state — out of sync now
+  generatedRows = [];
+  renderOutput();
+  document.getElementById('summary-wrap').style.display = 'none';
+  document.getElementById('btnSave').disabled = true;
+}
+
+function renderBrands() {
+  const grid = document.getElementById('brands-grid');
+  document.getElementById('brand-count').textContent = brands.length;
+  if (!brands.length) {
+    grid.innerHTML = `<div class="brands-empty"><p>No brands yet</p><p>Pick a brand in the sidebar, configure the suite, then click "+ Add Brand".</p></div>`;
+    return;
+  }
+  grid.innerHTML = brands.map((b, i) => {
+    const pills = [];
+    if (b.displays > 0) pills.push(`<span class="pill display">${b.displays} display${b.displays>1?'s':''}</span>`);
+    if (b.paper.length) pills.push(`<span class="pill paper">${b.paper.length} paper</span>`);
+    if (b.pre > 0) pills.push(`<span class="pill premium">${b.pre} premium</span>`);
+    if (b.wearable) pills.push(`<span class="pill wear">wearable ×4</span>`);
+    if (b.brand.isNew) pills.push(`<span class="pill" style="background:rgba(255,122,26,0.18);color:var(--orange-deep)">new brand</span>`);
+    return `<div class="brand-card">
+      <div class="tier-badge ${b.tier.toLowerCase()}">${b.tier}</div>
+      <div class="brand-info">
+        <div class="brand-name">${escapeHtml(b.brand.name)}</div>
+        <div class="brand-meta">${escapeHtml(b.program)} · ${escapeHtml(b.period)}</div>
+        <div class="brand-pills">${pills.join('')}</div>
+      </div>
+      <div class="brand-actions">
+        <button class="btn-icon danger" onclick="removeBrand(${i})" title="Remove">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// GENERATE LINE ITEMS
+// ============================================================
+function generate() {
+  if (!brands.length) { showToast('Add at least one brand first', 'error'); return; }
+  generatedRows = [];
+  let seq = 1;
+
+  brands.forEach(b => {
+    const push = obj => generatedRows.push({
+      seq: seq++,
+      brandName: b.brand.name,
+      brandId: b.brand.id,
+      brandIsNew: b.brand.isNew,
+      brandCategory: b.brand.category || b.tier,
+      tier: b.tier,
+      program: b.program,
+      period: b.period,
+      ...obj,
+    });
+
+    for (let d = 0; d < b.displays; d++) {
+      push({
+        cat: 'display',
+        zone: 'Display - DSP',
+        posCode: 'DPL',
+        itemTypeName: d === 2 ? 'Display Enhancer' : 'Display',
+        description: `${b.brand.name} ${DISPLAY_LABELS[d]}`,
+        subCat: d === 2 ? 'Enhancer' : 'Display',
+        status: b.dispStatus,
+      });
+    }
+
+    b.paper.forEach(p => {
+      push({
+        cat: 'paper',
+        zone: 'Print - PRT',
+        posCode: 'PPR',
+        itemTypeName: p.itemTypeName,
+        description: `${b.brand.name} ${p.label}`,
+        subCat: p.subCat,
+        status: 'include',
+      });
+    });
+
+    for (let n = 1; n <= b.pre; n++) {
+      push({
+        cat: 'premium',
+        zone: 'Premium - PRE',
+        posCode: 'PRE',
+        itemTypeName: 'Accessories',
+        description: `${b.brand.name} Premium TBD ${n}`,
+        subCat: 'Accessories',
+        status: b.preStatus,
+      });
+    }
+
+    if (b.wearable) {
+      ['M','L','XL','XXL'].forEach(size => {
+        push({
+          cat: 'premium',
+          zone: 'Premium - PRE',
+          posCode: 'PRE',
+          itemTypeName: 'Wearable',
+          description: `${b.brand.name} Wearable TBD - ${size}`,
+          subCat: 'Wearable',
+          status: b.preStatus,
+        });
+      });
+    }
+  });
+
+  renderOutput();
+  document.getElementById('btnSave').disabled = false;
+  showToast(`${generatedRows.length} line items generated`);
+}
+
+function renderOutput() {
+  const out = document.getElementById('output-wrap');
+  if (!generatedRows.length) {
+    out.innerHTML = `<div class="section-head">Generated items</div><div class="no-output">Add brands and click Generate to see your line items here.</div>`;
+    document.getElementById('summary-wrap').style.display = 'none';
+    return;
+  }
+
+  // Summary
+  document.getElementById('summary-wrap').style.display = '';
+  document.getElementById('s-brands').textContent = brands.length;
+  document.getElementById('s-total').textContent = generatedRows.length;
+  document.getElementById('s-disp').textContent = generatedRows.filter(r => r.cat === 'display').length;
+  document.getElementById('s-paper').textContent = generatedRows.filter(r => r.cat === 'paper').length;
+  document.getElementById('s-pre').textContent = generatedRows.filter(r => r.cat === 'premium').length;
+
+  // Group by brand
+  const byBrand = {};
+  generatedRows.forEach(r => { if (!byBrand[r.brandName]) byBrand[r.brandName] = []; byBrand[r.brandName].push(r); });
+
+  const stClass = s => s === 'include' ? 'st-include' : s === 'TBD' ? 'st-tbd' : 'st-q';
+
+  out.innerHTML = `<div class="section-head">Generated items · ${fy} ${wave} Buy</div>`
+    + Object.entries(byBrand).map(([name, rows]) => {
+      const b = brands.find(x => x.brand.name === name);
+      return `<div class="brand-output">
+        <div class="brand-output-header">
+          <div class="tier-badge ${b.tier.toLowerCase()}">${b.tier}</div>
+          <div>
+            <div class="brand-output-name">${escapeHtml(name)}</div>
+            <div class="brand-output-meta">${escapeHtml(b.program)} · ${escapeHtml(b.period)}</div>
+          </div>
+          <div class="brand-output-count">${rows.length} items</div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>#</th><th>Category</th><th>Item description</th><th>Sub-category</th><th>Item type</th><th>POS code</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(r => `<tr>
+              <td class="bo-seq">${String(r.seq).padStart(3,'0')}</td>
+              <td><span class="cat-badge cat-${r.cat}">${r.cat}</span></td>
+              <td class="bo-desc">${escapeHtml(r.description)}</td>
+              <td class="bo-sub">${escapeHtml(r.subCat)}</td>
+              <td class="bo-sub">${escapeHtml(r.itemTypeName)}</td>
+              <td class="bo-pos">${r.posCode}</td>
+              <td><span class="status-pill ${stClass(r.status)}">${escapeHtml(r.status)}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    }).join('');
+}
+
+// ============================================================
+// SAVE TO SUPABASE
+// ============================================================
+async function saveToSupabase() {
+  if (!generatedRows.length) { showToast('Generate items first', 'error'); return; }
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Saving…';
+
+  const pbp = `${fy} ${wave} Buy`;
+  const shippingWave = WAVE_TO_SHIPPING_WAVE[wave] || null;
+
+  let createdItems = 0;
+  let createdPrograms = 0;
+  let lastProgramId = null;
+
+  try {
+    // 0. Find-or-create the season row. Without this, items created here
+    //    leave seasons table untouched — the trigger only LINKS to existing
+    //    rows, it doesn't create them — so the new pre_buy_program never
+    //    appears in Admin → Seasons or the Toolkit Manager scope dropdown.
+    const seasonLookup = await sb.from('seasons').select('id').eq('name', pbp).maybeSingle();
+    if (!seasonLookup.data) {
+      const fyNum = parseInt(fy.replace(/[^0-9]/g, ''), 10);
+      const waveOffset = { SM: 1, HL: 2, SP: 3 }[wave] || 999;
+      const sortOrder = Number.isFinite(fyNum) ? (fyNum - 25) * 3 + waveOffset : 999;
+      const { error: seasonErr } = await sb.from('seasons')
+        .insert({ name: pbp, status: 'Planning', sort_order: sortOrder });
+      if (seasonErr) throw new Error(`Season "${pbp}": ${seasonErr.message}`);
+    }
+
+    for (const b of brands) {
+      // 1. Resolve brand_id (create if custom)
+      let brandId = b.brand.id;
+      if (!brandId) {
+        const { data, error } = await sb.from('brands')
+          .insert({ name: b.brand.name, category: b.brand.category || b.tier })
+          .select('id').single();
+        if (error) throw new Error(`Brand "${b.brand.name}": ${error.message}`);
+        brandId = data.id;
+      }
+
+      // 2. Find-or-create program for this brand
+      const programLookup = await sb.from('programs')
+        .select('id')
+        .eq('brand_id', brandId)
+        .eq('name', b.program)
+        .eq('focus_period', b.period || '')
+        .maybeSingle();
+
+      let programId = programLookup.data?.id;
+      if (!programId) {
+        const { data, error } = await sb.from('programs')
+          .insert({
+            brand_id: brandId,
+            name: b.program,
+            focus_period: b.period || null,
+            shipping_wave: shippingWave,
+            category: b.tier,
+            status: 'draft',
+          })
+          .select('id').single();
+        if (error) throw new Error(`Program "${b.program}" for ${b.brand.name}: ${error.message}`);
+        programId = data.id;
+        createdPrograms++;
+      }
+      lastProgramId = programId;
+
+      // 3. Build toolkit_items payload for this brand
+      const brandRows = generatedRows.filter(r => r.brandName === b.brand.name);
+      const payload = brandRows.map(r => ({
+        program_id: programId,
+        item_type_id: itemTypeByName[r.itemTypeName.toLowerCase()] || null,
+        category: r.cat,
+        item_description: r.description,
+        item_sub_category: r.subCat,
+        pre_buy_program: pbp,
+        spec_template: r.cat === 'paper' ? r.subCat : null,
+        pre_buy_status: r.status,
+        shipping_wave: shippingWave,
+      }));
+
+      const { data: insertedItems, error: itemsErr } = await sb.from('toolkit_items')
+        .insert(payload).select('id, category');
+      if (itemsErr) throw new Error(`Items for ${b.brand.name}: ${itemsErr.message}`);
+
+      createdItems += insertedItems.length;
+
+      // 4. Stub paper_specs rows for paper items
+      const paperIds = insertedItems.filter(it => it.category === 'paper').map(it => ({ toolkit_item_id: it.id }));
+      if (paperIds.length) {
+        const { error: specErr } = await sb.from('paper_specs').insert(paperIds);
+        if (specErr) console.warn('paper_specs stub insert failed (non-fatal):', specErr.message);
+      }
+    }
+
+    showModal(createdItems, createdPrograms, lastProgramId);
+  } catch (e) {
+    console.error(e);
+    showToast('Save failed: ' + (e.message || e), 'error');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+function showModal(items, programs, lastProgramId) {
+  document.getElementById('modalTitle').textContent = `${items} items created`;
+  document.getElementById('modalSub').textContent = `${programs} program${programs === 1 ? '' : 's'} created or matched · ${fy} ${wave} Buy`;
+  // Link to toolkit manager — no deep-linking by program in current page, but harmless to include
+  document.getElementById('modalView').href = 'toolkit-manager.html';
+  document.getElementById('modalBack').classList.add('open');
+}
+function hideModal() {
+  document.getElementById('modalBack').classList.remove('open');
+  clearAll();
+}
+
+// ============================================================
+// COPY TSV
+// ============================================================
+function copyTSV() {
+  if (!generatedRows.length) { showToast('Generate items first', 'error'); return; }
+  const pbp = `${fy} ${wave} Buy`;
+  const h = ['Program','Program Status','Brand','Brand Category','Program','Focus Period','Category','Element Zone','POS Code','Item Type','Item Description','Item Sub-Category'];
+  const rows = generatedRows.map(r => [pbp, r.status, r.brandName, r.tier, r.program, r.period, r.cat, r.zone, r.posCode, r.itemTypeName, r.description, r.subCat]);
+  navigator.clipboard.writeText([h, ...rows].map(r => r.join('\t')).join('\n'))
+    .then(() => showToast('Copied! Paste into the Toolkit – Sourcing sheet'))
+    .catch(() => showToast('Clipboard write failed', 'error'));
+}
+
+function clearAll() {
+  brands = [];
+  generatedRows = [];
+  renderBrands();
+  renderOutput();
+  document.getElementById('summary-wrap').style.display = 'none';
+  document.getElementById('btnSave').disabled = true;
+  document.getElementById('btnSave').textContent = 'Save to Supabase';
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function showToast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind === 'error' ? 'error' : 'ok');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Enter key on program name → focus period
+document.addEventListener('DOMContentLoaded', () => {
+  const p = document.getElementById('f-program');
+  if (p) p.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('f-period').focus(); });
+  const pd = document.getElementById('f-period');
+  if (pd) pd.addEventListener('keydown', e => { if (e.key === 'Enter') addBrand(); });
+});
+</script>
+</body>
+</html>

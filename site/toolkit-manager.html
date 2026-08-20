@@ -1,0 +1,2631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toolkit Manager — Overclock Hub</title>
+
+<!-- Pre-render auth peek: if a Supabase token is already in localStorage,
+     skip showing the gate immediately so it doesn't flash on navigation. -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="dns-prefetch" href="https://YOUR-PROJECT-REF.supabase.co">
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+<style>
+/* ━━━ TOOLKIT MANAGER · page-specific styles ━━━ */
+
+/* Data table grid for toolkit rows — defaults to Standard view shape.
+   Tighter column gap + cell padding than the shared stylesheet so the wider
+   views (Planning / Sourcing) don't leave so much dead space between columns. */
+.t-head, .t-row{
+  grid-template-columns:110px 1fr 140px 110px 100px 110px 110px 80px;
+  gap:6px;
+  padding-left:14px;
+  padding-right:14px;
+}
+.t-row .pos{font-family:var(--mono);font-size:10.5px;color:var(--blue-deep);font-weight:600}
+.t-row .desc{color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-row .edit{color:var(--blue-deep)}
+.t-row .num-mono{font-family:var(--mono);font-size:11.5px;color:var(--gray-mid)}
+
+/* Sortable column headers — clickable, with arrow indicator */
+.t-head span.sortable{cursor:pointer;user-select:none;transition:color 0.15s}
+.t-head span.sortable:hover{color:var(--blue-deep)}
+.t-head span.active-sort{color:var(--blue-deep);font-weight:700}
+.t-head span .sort-arr{font-family:var(--mono);font-size:9px;margin-left:4px;opacity:0.8}
+
+/* ━━━ VIEW SWITCHER ━━━ */
+.view-bar{
+  display:flex;align-items:center;gap:14px;padding:14px 48px 0;
+  flex-wrap:wrap;
+}
+.view-bar .vb-lbl{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gray-soft);font-weight:600;
+}
+/* View switcher — a plain dropdown reusing .filter-select so it matches the
+   filters below it. Only tweak: enough width for the longest view name and a
+   cursor hint. */
+.view-select{min-width:190px;cursor:pointer}
+
+/* Customize button in the view bar */
+.view-customize-btn{
+  border:1px solid var(--line-light);background:#fff;color:var(--blue-deep);
+  font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;
+  padding:9px 14px;border-radius:5px;cursor:pointer;box-shadow:var(--elev);
+  transition:border-color 0.15s,background 0.15s;
+}
+.view-customize-btn:hover{border-color:var(--blue-bright);background:var(--blue-tint)}
+
+/* Column-picker modal */
+.view-editor-back{
+  position:fixed;inset:0;background:rgba(10,13,20,0.5);z-index:200;
+  display:none;align-items:center;justify-content:center;padding:24px;
+}
+.view-editor-back.open{display:flex}
+.view-editor{
+  background:#fff;border-radius:8px;max-width:640px;width:100%;
+  padding:24px 26px;box-shadow:var(--elev-hi);max-height:86vh;display:flex;flex-direction:column;
+}
+.ve-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.ve-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--orange-deep);font-weight:600}
+.ve-title{font-family:var(--display);font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-0.01em;margin-top:3px}
+.ve-name-lbl{display:block;font-family:var(--mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-mid);font-weight:600;margin-bottom:16px}
+.ve-name-input{display:block;width:100%;margin-top:6px;font-family:var(--body);font-size:14px;color:var(--ink);background:#fff;border:1px solid var(--line-light);border-radius:5px;padding:9px 12px;outline:none;box-sizing:border-box}
+.ve-name-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.ve-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1;min-height:0}
+.ve-col{display:flex;flex-direction:column;min-height:0}
+.ve-col-head{font-family:var(--mono);font-size:8.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray-soft);font-weight:600;margin-bottom:6px}
+.ve-list{border:1px solid var(--line-light);border-radius:6px;overflow-y:auto;max-height:44vh;background:var(--off-white)}
+.ve-item{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--hair);background:#fff;font-size:12.5px;color:var(--ink)}
+.ve-item:last-child{border-bottom:none}
+.ve-item .ve-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ve-item .ve-field{font-family:var(--mono);font-size:9px;color:var(--gray-soft)}
+.ve-btn{border:none;background:transparent;cursor:pointer;color:var(--gray-mid);width:22px;height:22px;border-radius:4px;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:background 0.12s,color 0.12s;flex:none}
+.ve-btn:hover:not(:disabled){background:var(--blue-tint);color:var(--blue-deep)}
+.ve-btn:disabled{opacity:0.3;cursor:not-allowed}
+.ve-btn.rm:hover:not(:disabled){background:rgba(192,57,43,0.10);color:var(--red)}
+.ve-empty{padding:18px 10px;text-align:center;color:var(--gray-soft);font-size:11.5px}
+.ve-foot{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:16px}
+@media(max-width:560px){ .ve-cols{grid-template-columns:1fr} }
+
+/* Sticky control cluster — view switcher + filters stay pinned under the nav on scroll */
+.controls-sticky{
+  position:sticky;top:54px;z-index:50;
+  background:var(--page);
+  box-shadow:0 6px 18px rgba(10,13,20,0.06);
+}
+/* The filter bar's own sticky is now owned by the wrapper */
+.controls-sticky > .filter-bar{position:static;top:auto;box-shadow:none}
+.controls-sticky > .view-bar{padding-bottom:12px;background:var(--page)}
+
+/* ━━━ MOQ VIEW grid + horizontal scroll ━━━
+   Column order (Season-Buy lives in the filter rail, not the table):
+   POS # / Item Description / Brand / Program / Category / Item Type /
+   Current MOQ / Chosen MOQ (tiles inline) / Action */
+.panel[data-view="moq"] .t-head, .panel[data-view="moq"] .t-row {
+  grid-template-columns:100px 1fr 110px 130px 90px 110px 90px 200px 70px;
+}
+.panel[data-view="moq"] .table-wrap{overflow-x:auto}
+.panel[data-view="moq"] .t-head, .panel[data-view="moq"] .t-row{min-width:1240px}
+
+/* ━━━ PLANNING VIEW grid + horizontal scroll ━━━
+   Column order: POS # / Brand / Program / Focus Period / Item Category /
+   Item Type / Item Description / Pack Out / UOM / MOQ */
+.panel[data-view="planning"] .t-head, .panel[data-view="planning"] .t-row {
+  grid-template-columns:84px 100px 110px 88px 96px 104px 1fr 74px 52px 62px;
+}
+.panel[data-view="planning"] .table-wrap{overflow-x:auto}
+.panel[data-view="planning"] .t-head, .panel[data-view="planning"] .t-row{min-width:900px}
+
+/* ━━━ SOURCING VIEW grid + horizontal scroll ━━━
+   Column order: Long/Short Lead / Sourcing Vendor / POS # / Brand / Program /
+   Focus Period / Item Category / Item Type / Standard/Custom Element /
+   Item Description / Item Description & Spec for Sourcing / Pack Out / UOM / MOQ */
+.panel[data-view="sourcing"] .t-head, .panel[data-view="sourcing"] .t-row {
+  grid-template-columns:104px 112px 84px 100px 110px 88px 96px 104px 116px minmax(150px,1fr) minmax(150px,1fr) 74px 52px 62px;
+}
+.panel[data-view="sourcing"] .table-wrap{overflow-x:auto}
+.panel[data-view="sourcing"] .t-head, .panel[data-view="sourcing"] .t-row{min-width:1500px}
+
+/* Merged Chosen MOQ cell — tiles inline + dirty dot on active tile */
+.moq-chosen-merged{display:flex;align-items:center;gap:6px;width:100%}
+.moq-chosen-merged .moq-tiles{flex:1}
+.moq-tile.active.dirty{position:relative}
+.moq-tile.active.dirty::after{
+  content:'';position:absolute;top:-3px;right:-3px;width:8px;height:8px;
+  background:var(--orange);border-radius:50%;border:1.5px solid #fff;
+  box-shadow:0 0 4px rgba(255,122,26,0.5);
+}
+
+.moq-action-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:14px 20px;margin-bottom:14px;background:#fff;border:1px solid var(--line-light);
+  border-radius:6px;box-shadow:var(--elev);flex-wrap:wrap;
+}
+.moq-action-bar .left{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.moq-action-bar .right{display:flex;align-items:center;gap:10px}
+.moq-action-bar .ab-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--orange-deep);font-weight:600;
+}
+.moq-action-bar .ab-status{
+  font-family:var(--mono);font-size:11px;color:var(--gray-mid);letter-spacing:0.04em;
+}
+.moq-action-bar .ab-status strong{color:var(--ink);font-weight:600}
+.moq-action-bar .ab-warning{color:var(--red);font-family:var(--mono);font-size:10px;letter-spacing:0.06em}
+
+/* Season-scope status badge — chronological palette, used next to the Season-Buy filter label. */
+.season-status-pill{vertical-align:middle;margin-left:6px}
+.badge.planning{background:var(--off-white);color:var(--gray-mid);border-color:var(--line-light)}
+.badge.sourcing{background:var(--blue-soft);color:var(--blue-deep);border-color:rgba(30,63,214,0.22)}
+.badge.production{background:var(--orange-soft);color:var(--orange-deep);border-color:rgba(255,122,26,0.28)}
+.badge.fulfillment{background:rgba(255,122,26,0.06);color:var(--orange-deep);border-color:rgba(255,122,26,0.20)}
+.badge.complete{background:rgba(26,122,74,0.10);color:#155a36;border-color:rgba(26,122,74,0.25)}
+
+.btn-bulk-moq{
+  background:var(--orange);color:#241000;border:none;border-radius:5px;
+  padding:10px 16px;font-family:var(--display);font-size:12.5px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:8px;transition:background 0.15s,box-shadow 0.15s;
+}
+.btn-bulk-moq:hover:not(:disabled){background:var(--orange-bright);box-shadow:0 6px 14px rgba(255,122,26,0.24)}
+.btn-bulk-moq:disabled{opacity:0.5;cursor:not-allowed;background:#dde0e5;color:#888}
+.btn-bulk-moq svg{width:13px;height:13px}
+
+.btn-bulk-save{
+  background:var(--green);color:#fff;border:none;border-radius:5px;
+  padding:10px 16px;font-family:var(--display);font-size:12.5px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:8px;transition:background 0.15s,box-shadow 0.15s;
+}
+.btn-bulk-save:hover:not(:disabled){background:#23A263;box-shadow:0 6px 14px rgba(26,122,74,0.24)}
+.btn-bulk-save:disabled{opacity:0.6;cursor:not-allowed}
+
+.btn-bulk-clear{
+  background:transparent;border:1px solid var(--line-light);color:var(--gray-mid);
+  padding:9px 14px;border-radius:5px;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;
+  text-transform:uppercase;cursor:pointer;transition:border-color 0.15s,color 0.15s;
+}
+.btn-bulk-clear:hover{border-color:var(--red);color:var(--red)}
+
+/* Progress bar */
+.moq-progress{
+  flex:1;min-width:160px;max-width:280px;height:6px;background:var(--off-white);border-radius:3px;overflow:hidden;
+}
+.moq-progress-fill{height:100%;background:var(--orange);width:0%;transition:width 0.2s}
+.moq-progress-fill.done{background:var(--green)}
+
+/* MOQ tiles inside the table cell */
+.moq-tiles{display:flex;gap:6px;align-items:center;width:100%}
+.moq-tile{
+  flex:1;background:#fff;border:1px solid var(--line-light);border-radius:4px;
+  padding:5px 6px;cursor:pointer;text-align:center;
+  transition:border-color 0.15s,background 0.15s,transform 0.1s;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  min-height:38px;
+}
+.moq-tile:hover:not(.disabled){border-color:var(--blue-bright);background:var(--blue-tint)}
+.moq-tile:active:not(.disabled){transform:scale(0.96)}
+.moq-tile .lbl{
+  font-family:var(--mono);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--gray-soft);font-weight:600;
+}
+.moq-tile .num{
+  font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:700;line-height:1;
+}
+.moq-tile.active{background:var(--orange-soft);border-color:var(--orange)}
+.moq-tile.active.py{background:var(--blue-soft);border-color:var(--blue)}
+.moq-tile.active .lbl{color:var(--orange-deep)}
+.moq-tile.active.py .lbl{color:var(--blue-deep)}
+.moq-tile.disabled{cursor:not-allowed;opacity:0.45}
+.moq-tile.disabled .num{color:var(--gray-soft)}
+
+.moq-cell-chosen{
+  display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;
+}
+.moq-chosen-num{
+  font-family:var(--display);font-size:15px;font-weight:700;color:var(--ink);line-height:1;
+}
+.moq-chosen-num.dirty{color:var(--orange-deep)}
+.moq-chosen-num.dirty::after{content:'•';color:var(--orange);margin-left:3px;font-size:18px;line-height:0}
+.moq-info-btn{
+  background:transparent;border:none;color:var(--gray-soft);cursor:pointer;
+  width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;transition:background 0.15s,color 0.15s;
+}
+.moq-info-btn:hover{background:var(--blue-tint);color:var(--blue-deep)}
+.moq-info-btn:disabled{opacity:0.3;cursor:not-allowed}
+
+.moq-cell-status{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray-soft);
+  text-align:center;
+}
+.moq-cell-status.pending{color:var(--gray-soft)}
+.moq-cell-status.error{color:var(--red)}
+
+/* Popover for per-item analysis */
+.moq-popover-back{
+  position:fixed;inset:0;background:rgba(10,13,20,0.5);z-index:200;
+  display:none;align-items:center;justify-content:center;padding:24px;
+}
+.moq-popover-back.open{display:flex}
+.moq-popover{
+  background:#fff;border-radius:8px;max-width:600px;width:100%;
+  padding:24px 28px;box-shadow:var(--elev-hi);max-height:80vh;overflow-y:auto;
+}
+.moq-popover-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.moq-popover-head .ttl{font-family:var(--display);font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-0.01em;line-height:1.2}
+.moq-popover-head .sub{font-size:11px;color:var(--gray-mid);margin-top:3px}
+.moq-popover-close{
+  background:transparent;border:none;color:var(--gray-mid);font-size:24px;cursor:pointer;
+  line-height:1;padding:0 4px;
+}
+.moq-popover-section{margin-top:14px}
+.moq-popover-section .ttl{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--gray-mid);margin-bottom:6px;font-weight:600;
+}
+.moq-popover-stats{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:11px;color:var(--gray-mid)}
+.moq-popover-stats span{padding:3px 8px;background:var(--off-white);border-radius:3px}
+.moq-popover-stats span strong{color:var(--ink);margin-left:4px}
+.moq-popover-rationale{font-size:13px;color:var(--ink);line-height:1.55}
+.moq-popover-adj{font-size:12px;color:var(--gray-mid);font-style:italic;padding:8px 12px;background:var(--off-white);border-radius:4px;border-left:2px solid var(--orange);line-height:1.5}
+.moq-popover-risks{display:flex;flex-wrap:wrap;gap:5px}
+.moq-popover-risk{
+  font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;
+  background:rgba(192,57,43,0.08);color:#8b291f;
+}
+.moq-popover-neg{font-size:12px;color:var(--gray-mid);font-style:italic;line-height:1.5}
+
+/* Bulk confirm modal */
+.bulk-confirm-back{
+  position:fixed;inset:0;background:rgba(10,13,20,0.5);z-index:200;
+  display:none;align-items:center;justify-content:center;padding:24px;
+}
+.bulk-confirm-back.open{display:flex}
+.bulk-confirm{
+  background:#fff;border-radius:8px;max-width:440px;width:100%;
+  padding:28px 30px;box-shadow:var(--elev-hi);
+}
+.bulk-confirm h3{font-family:var(--display);font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-0.01em;margin-bottom:6px}
+.bulk-confirm p{font-size:13px;color:var(--gray-mid);line-height:1.55;margin-bottom:14px}
+.bulk-confirm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px}
+.bulk-confirm-stat{background:var(--off-white);border-radius:5px;padding:10px 12px;text-align:center}
+.bulk-confirm-stat .v{font-family:var(--display);font-size:18px;font-weight:700;color:var(--ink);line-height:1}
+.bulk-confirm-stat .l{font-family:var(--mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-soft);margin-top:5px}
+.bulk-confirm-actions{display:flex;gap:8px;justify-content:flex-end}
+
+/* Category badges */
+.cat-badge{
+  display:inline-block;
+  font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;
+  padding:3px 7px;border-radius:3px;
+}
+.cat-paper{background:var(--blue-soft);color:var(--blue-deep)}
+.cat-display{background:rgba(0,180,188,0.12);color:#006a70}
+.cat-premium{background:var(--orange-soft);color:var(--orange-deep)}
+
+/* Pre-buy status badges */
+.status-badge{
+  display:inline-block;
+  font-family:var(--mono);font-size:9px;letter-spacing:1px;
+  padding:3px 8px;border-radius:3px;text-transform:lowercase;
+}
+.status-include{background:rgba(26,122,74,0.12);color:#155a36}
+.status-removed{background:rgba(192,57,43,0.10);color:#8b291f}
+.status-pod{background:var(--orange-soft);color:var(--orange-deep)}
+
+/* Empty state inside the table */
+.empty-state{padding:64px 32px;text-align:center;color:var(--gray-soft)}
+.empty-state-icon{width:48px;height:48px;margin:0 auto 14px;color:var(--line-light)}
+.empty-state p{font-size:13px}
+
+/* Loading shimmer */
+.loading{
+  padding:64px 32px;text-align:center;color:var(--gray-soft);
+  font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;
+}
+.loading::after{
+  content:'';display:inline-block;width:12px;height:12px;margin-left:8px;
+  border:2px solid var(--line-light);border-top-color:var(--blue);border-radius:50%;
+  animation:tkSpin 0.7s linear infinite;vertical-align:middle;
+}
+@keyframes tkSpin{to{transform:rotate(360deg)}}
+
+/* Toast — JS passes 'success'; alias it to ok */
+.toast.success{border-left-color:#3ae07a}
+
+/* Table panel padding */
+.panel{padding:24px 48px 48px}
+
+/* Drawer head extras */
+.drawer-pos{
+  font-family:var(--mono);font-size:10px;letter-spacing:2px;
+  color:var(--orange-deep);text-transform:uppercase;margin-bottom:4px;
+}
+
+/* ━━━ MOQ RECOMMENDATION PANEL ━━━ */
+.moq-section{margin-top:28px;padding-top:20px;border-top:1px solid var(--line-light)}
+.moq-section .field-section-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.moq-section .field-section-head .ai-pill{
+  display:inline-block;font-family:var(--mono);font-size:8px;letter-spacing:0.18em;
+  padding:2px 6px;border-radius:3px;background:var(--orange-soft);color:var(--orange-deep);
+  text-transform:uppercase;font-weight:600;
+}
+.moq-intro{font-size:11.5px;color:var(--gray-mid);margin-bottom:12px;line-height:1.5}
+.moq-intro code{font-family:var(--mono);font-size:10.5px;color:var(--blue-deep);background:var(--blue-tint);padding:1px 5px;border-radius:3px}
+.btn-moq{
+  background:var(--orange);color:#241000;border:none;border-radius:5px;
+  padding:10px 16px;font-family:var(--display);font-size:12.5px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:8px;
+  transition:background 0.15s,box-shadow 0.15s;
+}
+.btn-moq:hover{background:var(--orange-bright);box-shadow:0 6px 14px rgba(255,122,26,0.24)}
+.btn-moq:disabled{opacity:0.55;cursor:not-allowed;box-shadow:none}
+.btn-moq svg{width:13px;height:13px}
+
+.moq-loading{
+  padding:24px;text-align:center;color:var(--gray-mid);font-size:11.5px;
+  font-family:var(--mono);letter-spacing:0.08em;
+}
+.moq-loading::after{
+  content:'';display:inline-block;width:11px;height:11px;margin-left:8px;
+  border:2px solid var(--line-light);border-top-color:var(--orange);border-radius:50%;
+  animation:tkSpin 0.7s linear infinite;vertical-align:middle;
+}
+
+.moq-result{margin-top:6px}
+.moq-cards{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch;
+  position:relative;
+}
+.moq-card{
+  background:#fff;border:1px solid var(--line-light);border-radius:6px;
+  padding:16px 18px;box-shadow:var(--elev);display:flex;flex-direction:column;gap:10px;
+}
+.moq-card-head{display:flex;align-items:center;justify-content:space-between}
+.moq-card-eyebrow{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--gray-mid);font-weight:600;
+}
+.moq-card.stat .moq-card-eyebrow{color:var(--blue-deep)}
+.moq-card.ai .moq-card-eyebrow{color:var(--orange-deep)}
+.moq-number{
+  font-family:var(--display);font-size:34px;font-weight:700;color:var(--ink);
+  letter-spacing:-0.02em;line-height:1;
+}
+.moq-number-sub{font-size:10.5px;color:var(--gray-soft);margin-top:4px;font-family:var(--mono);letter-spacing:0.04em}
+.moq-trend{
+  display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;
+  padding:2px 7px;border-radius:3px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;
+}
+.moq-trend.up{background:rgba(26,122,74,0.12);color:#155a36}
+.moq-trend.down{background:rgba(192,57,43,0.10);color:#8b291f}
+.moq-trend.flat{background:#eef1f5;color:var(--gray-mid)}
+
+.moq-conf{
+  display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;
+  padding:3px 8px;border-radius:3px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;
+}
+.moq-conf.high{background:rgba(26,122,74,0.14);color:#155a36}
+.moq-conf.medium{background:rgba(181,118,14,0.16);color:var(--amber)}
+.moq-conf.low{background:rgba(192,57,43,0.10);color:#8b291f}
+.moq-conf.none{background:#eef1f5;color:var(--gray-mid)}
+.moq-conf .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+.moq-meta-row{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:10px;color:var(--gray-mid)}
+.moq-meta-row span{padding:2px 7px;background:var(--off-white);border-radius:3px}
+.moq-meta-row span strong{color:var(--ink);font-weight:700;margin-left:4px}
+
+.moq-mini-table{margin-top:4px;border-top:1px solid var(--hair);padding-top:8px}
+.moq-mini-table table{width:100%;border-collapse:collapse;font-size:11px}
+.moq-mini-table th, .moq-mini-table td{
+  text-align:left;padding:4px 6px;border-bottom:1px solid var(--hair);
+}
+.moq-mini-table th{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--gray-mid);font-weight:600;
+}
+.moq-mini-table td{color:var(--ink)}
+.moq-mini-table td.num{font-family:var(--mono);text-align:right}
+
+.moq-delta{
+  font-family:var(--mono);font-size:11px;font-weight:600;
+  padding:3px 9px;border-radius:3px;letter-spacing:0.04em;
+}
+.moq-delta.up{background:rgba(255,122,26,0.14);color:var(--orange-deep)}
+.moq-delta.down{background:var(--blue-soft);color:var(--blue-deep)}
+
+.moq-consensus-bar{
+  margin:10px 0 6px;padding:8px 14px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;
+}
+.moq-consensus-bar.match{background:rgba(26,122,74,0.10);color:#155a36}
+.moq-consensus-bar.diverge{background:rgba(181,118,14,0.12);color:var(--amber)}
+
+.moq-rationale{font-size:12px;color:var(--ink);line-height:1.5;margin-top:2px}
+.moq-adj-reason{font-size:11.5px;color:var(--gray-mid);font-style:italic;line-height:1.5;margin-top:2px;padding:7px 10px;background:var(--off-white);border-radius:4px;border-left:2px solid var(--orange)}
+.moq-risks{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.moq-risk{
+  display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:0.04em;
+  padding:3px 8px;border-radius:3px;background:rgba(192,57,43,0.08);color:#8b291f;font-weight:500;
+}
+.moq-neg-note{font-size:11px;color:var(--gray-mid);font-style:italic;margin-top:4px;line-height:1.5}
+
+.moq-banner{
+  padding:11px 14px;border-radius:5px;font-size:11.5px;line-height:1.5;
+  display:flex;align-items:flex-start;gap:8px;margin:10px 0;
+}
+.moq-banner.warn{background:rgba(181,118,14,0.10);color:#7a5004;border-left:3px solid var(--amber)}
+.moq-banner.error{background:rgba(192,57,43,0.08);color:#8b291f;border-left:3px solid var(--red)}
+.moq-banner.empty{background:var(--off-white);color:var(--gray-mid);border-left:3px solid var(--gray-soft)}
+
+.moq-records-toggle{
+  background:transparent;border:1px dashed var(--line-light);color:var(--gray-mid);
+  padding:8px 14px;border-radius:4px;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;
+  text-transform:uppercase;cursor:pointer;width:100%;margin-top:10px;
+  transition:border-color 0.15s,color 0.15s;
+}
+.moq-records-toggle:hover{border-color:var(--blue);color:var(--blue-deep)}
+.moq-records-full{display:none;margin-top:8px}
+.moq-records-full.open{display:block}
+.moq-records-full table{width:100%;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid var(--line-light);border-radius:5px;overflow:hidden}
+.moq-records-full th{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--gray-mid);font-weight:600;text-align:left;padding:8px 10px;background:var(--off-white);
+  border-bottom:1px solid var(--line-light);
+}
+.moq-records-full td{padding:7px 10px;border-bottom:1px solid var(--hair);color:var(--ink)}
+.moq-records-full td.num{font-family:var(--mono);text-align:right}
+
+@media(max-width:720px){
+  .moq-cards{grid-template-columns:1fr}
+}
+
+@media(max-width:1100px){
+  .t-head,.t-row{grid-template-columns:100px 1fr 120px 100px 90px 90px 80px}
+  .t-head span:nth-child(7),.t-row span:nth-child(7){display:none}
+}
+@media(max-width:900px){
+  .panel{padding-left:24px;padding-right:24px}
+  .filter-select,.filter-input{min-width:140px}
+  .t-head,.t-row{grid-template-columns:100px 1fr 90px 80px}
+  .t-head span:nth-child(n+5),.t-row span:nth-child(n+5){display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Toolkit Manager</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="5" y="11" width="14" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 1 1 8 0v4"/>
+    </svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool. Live database.</div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()">
+    </div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()">
+      <button class="gate-toggle" onclick="togglePwdVisibility()" aria-label="Toggle password visibility" tabindex="-1">
+        <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations &middot; Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link active" href="#">Toolkit</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser" title="Signed in"></span>
+    <button class="btn ghost" onclick="loadData()" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+      Refresh
+    </button>
+    <a class="btn ghost-warm" href="toolkit-builder.html" title="Stand up a brand-new toolkit from scratch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+      New Toolkit
+    </a>
+    <button class="btn warm" onclick="openDrawer(null)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New Item
+    </button>
+    <button class="btn ghost" onclick="signOut()" title="Sign out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sign Out
+    </button>
+  </div>
+</nav>
+
+<section class="cover">
+  <div class="cover-inner">
+    <div class="cover-eyebrow"><span class="chip warm"></span>Toolkit Operations · Live</div>
+    <h1 class="cover-title">Toolkit <em>Manager</em></h1>
+    <p class="cover-sub">Browse and edit all program toolkit items. Live data from Supabase.</p>
+    <div class="cover-meta">
+      <div><div class="cmi-label">Items</div><div class="cmi-val" id="cm-items">—</div></div>
+      <div><div class="cmi-label">Programs</div><div class="cmi-val" id="cm-programs">—</div></div>
+      <div><div class="cmi-label">Brands</div><div class="cmi-val" id="cm-brands">—</div></div>
+      <div><div class="cmi-label">Vendors</div><div class="cmi-val" id="cm-vendors">—</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="controls-sticky" id="controlsSticky">
+<section class="view-bar">
+  <span class="vb-lbl">View</span>
+  <select class="filter-select view-select" id="viewSelect" onchange="switchView(this.value)" aria-label="Table view">
+    <option value="standard">Standard</option>
+    <option value="planning">Toolkit Planning</option>
+    <option value="sourcing">Sourcing</option>
+    <option value="moq">MOQ Workbench</option>
+  </select>
+  <button class="view-customize-btn" id="btnCustomize" onclick="openViewEditor()" title="Build a custom view — pick which columns to show">Customize</button>
+  <span class="vb-lbl" id="viewHint" style="color:var(--gray-soft)">Browse + edit toolkit items</span>
+</section>
+
+<section class="filter-bar">
+  <div class="filter-group">
+    <label class="filter-lbl">
+      Season-Buy
+      <span class="badge season-status-pill" id="seasonScopeStatus" style="display:none"></span>
+    </label>
+    <select class="filter-select" id="fSeason" onchange="setSeasonScope(this.value)"><option value="">All seasons</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-lbl">Brand</label>
+    <select class="filter-select" id="fBrand" onchange="applyFilters()"><option value="">All brands</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-lbl">Program</label>
+    <select class="filter-select" id="fProgram" onchange="applyFilters()"><option value="">All programs</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-lbl">Vendor</label>
+    <select class="filter-select" id="fVendor" onchange="applyFilters()"><option value="">All vendors</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-lbl">Category</label>
+    <div class="filter-chips" id="fCategory">
+      <div class="f-chip active" data-val="">All</div>
+      <div class="f-chip" data-val="paper">Paper</div>
+      <div class="f-chip" data-val="display">Display</div>
+      <div class="f-chip" data-val="premium">Premium</div>
+    </div>
+  </div>
+  <div class="filter-group" style="flex:1;min-width:200px;">
+    <label class="filter-lbl">Search</label>
+    <input class="filter-input" id="fSearch" type="text" placeholder="POS#, description, material…" oninput="applyFilters()">
+  </div>
+  <div class="filter-count" id="filterCount">— items</div>
+</section>
+</div><!-- /.controls-sticky -->
+
+<section class="panel" id="tablePanel" data-view="standard">
+  <div class="moq-action-bar" id="moqActionBar" style="display:none">
+    <div class="left">
+      <span class="ab-eyebrow">MOQ Workbench</span>
+      <span class="ab-status" id="moqStatus">No filter active — narrow down with Season-Buy / Brand to enable bulk analysis.</span>
+      <div class="moq-progress" id="moqProgress" style="display:none"><div class="moq-progress-fill" id="moqProgressFill"></div></div>
+    </div>
+    <div class="right">
+      <button class="btn-bulk-clear" id="btnBulkClear" onclick="clearBulkMoq()" style="display:none">Clear</button>
+      <button class="btn-bulk-save" id="btnBulkSave" onclick="saveBulkMoq()" style="display:none">Save changes</button>
+      <button class="btn-bulk-moq" id="btnBulkRun" onclick="openBulkConfirm()" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        <span id="btnBulkRunLabel">Run MOQ Analysis</span>
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <div class="t-head" id="tableHead"><!-- populated by switchView() --></div>
+    <div id="tableBody">
+      <div class="loading">Loading data</div>
+    </div>
+  </div>
+</section>
+
+<!-- Bulk confirm modal -->
+<div class="bulk-confirm-back" id="bulkConfirmBack">
+  <div class="bulk-confirm">
+    <h3>Run MOQ analysis?</h3>
+    <p>This will fan out concurrent Claude calls — one per filtered item — and populate the Projected MOQ and MOQ columns. Nothing is saved to Supabase until you click <strong>Save changes</strong> at the top of the table.</p>
+    <div class="bulk-confirm-stats">
+      <div class="bulk-confirm-stat"><div class="v" id="bcItems">—</div><div class="l">Items</div></div>
+      <div class="bulk-confirm-stat"><div class="v" id="bcTime">—</div><div class="l">≈ Minutes</div></div>
+      <div class="bulk-confirm-stat"><div class="v" id="bcCost">—</div><div class="l">≈ Cost</div></div>
+    </div>
+    <div class="bulk-confirm-actions">
+      <button class="btn ghost" onclick="closeBulkConfirm()">Cancel</button>
+      <button class="btn warm" onclick="runBulkMoq()">Run analysis</button>
+    </div>
+  </div>
+</div>
+
+<!-- Per-item analysis popover -->
+<div class="moq-popover-back" id="moqPopoverBack" onclick="if(event.target===this)closeMoqPopover()">
+  <div class="moq-popover" id="moqPopover"></div>
+</div>
+
+<!-- Custom view column editor -->
+<div class="view-editor-back" id="viewEditorBack" onclick="if(event.target===this)closeViewEditor()">
+  <div class="view-editor">
+    <div class="ve-head">
+      <div>
+        <div class="ve-eyebrow" id="veEyebrow">New custom view</div>
+        <div class="ve-title">Choose columns</div>
+      </div>
+      <button class="moq-popover-close" onclick="closeViewEditor()">&times;</button>
+    </div>
+    <label class="ve-name-lbl">View name
+      <input type="text" class="ve-name-input" id="veName" placeholder="e.g. Vendor audit" maxlength="40">
+    </label>
+    <div class="ve-cols">
+      <div class="ve-col">
+        <div class="ve-col-head">Selected <span id="veSelCount"></span> — drag order with ↑ ↓</div>
+        <div class="ve-list" id="veSelected"></div>
+      </div>
+      <div class="ve-col">
+        <div class="ve-col-head">Available</div>
+        <div class="ve-list" id="veAvailable"></div>
+      </div>
+    </div>
+    <div class="ve-foot">
+      <button class="btn danger" id="veDelete" onclick="deleteViewEditor()" style="display:none;margin-right:auto;">Delete view</button>
+      <button class="btn ghost" onclick="closeViewEditor()">Cancel</button>
+      <button class="btn warm" id="veSave" onclick="saveViewEditor()">Save view</button>
+    </div>
+  </div>
+</div>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>Toolkit Manager</em></div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+</div>
+
+<!-- ===== DRAWER ===== -->
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-pos" id="drawerPos">New Item</div>
+      <div class="drawer-title" id="drawerTitle">Toolkit Item</div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawerBody">
+    <!-- populated by JS -->
+  </div>
+  <div class="drawer-foot">
+    <button class="btn danger" id="btnDelete" onclick="deleteItem()" style="display:none;margin-right:auto;">Delete</button>
+    <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+    <button class="btn warm" id="btnSave" onclick="saveItem()">Save</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG comes from site/config.local.js (gitignored).
+// If you see "Missing config" below, copy config.example.js → config.local.js
+// and fill in your Supabase project URL + anon key.
+// ============================================================
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;">'
+    + '<h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2>'
+    + '<p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in your Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing — see site/config.example.js');
+}
+const SUPABASE_URL  = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON = window.APP_CONFIG.SUPABASE_ANON;
+// ============================================================
+// Auth: real Supabase email + password login. No password lives in this file.
+// Create users in: Supabase Dashboard → Authentication → Users → "Add user"
+// ============================================================
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let allItems = [];          // toolkit_wide rows
+let allBrands = [];
+let allPrograms = [];
+let allVendors = [];
+let allItemTypes = [];
+let currentDrawerId = null;
+let currentDrawerCategory = 'paper';
+let activeCategory = '';    // filter
+
+// Season scope state. Toolkit Manager scopes its toolkit_wide fetch to a
+// single season (whichever is marked is_default in the seasons table) so
+// initial load doesn't have to pull every row. User can switch via the
+// Season-Buy dropdown; the choice is persisted to localStorage so a reload
+// keeps their last view.
+let seasonsList = [];           // rows from `seasons` table
+let currentSeasonScope = null;  // season name (string) or "" for All seasons; null = uninitialized
+
+// ============================================================
+// AUTH — Supabase email + password
+// ============================================================
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const error = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+
+  if (!email || !password) {
+    error.textContent = 'Email and password required';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  error.textContent = '';
+
+  const { data, error: authError } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+
+  if (authError) {
+    document.getElementById('gateInput').classList.add('error');
+    error.textContent = authError.message.includes('Invalid') ? 'Wrong email or password' : authError.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  // Reset session state so a fresh sign-in re-fetches seasons + scope, and the
+  // next user loads their own custom views (not the previous user's).
+  seasonsList = [];
+  currentSeasonScope = null;
+  customViews = [];
+  userViewsLoaded = false;
+  populateViewSelect();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+  document.getElementById('emailInput').value = '';
+  document.getElementById('gateInput').value = '';
+  document.getElementById('emailInput').focus();
+}
+
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('gateError').textContent = '';
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  loadData();
+}
+
+function togglePwdVisibility() {
+  const i = document.getElementById('gateInput');
+  i.type = i.type === 'password' ? 'text' : 'password';
+}
+
+// On page load: skip the gate if there's already an active session
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    enterApp(session);
+  } else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+// ============================================================
+// DATA LOAD
+// ============================================================
+
+// Load the seasons table once. Picks the initial scope from (in order):
+//   1. localStorage (user's last choice on this device)
+//   2. The is_default season in the table
+//   3. "" (All seasons) if neither is set
+async function loadSeasons() {
+  const { data, error } = await sb.from('seasons')
+    .select('id, name, status, is_default, sort_order')
+    .order('sort_order');
+  if (error) {
+    console.error('Failed to load seasons:', error);
+    seasonsList = [];
+  } else {
+    seasonsList = data || [];
+  }
+  if (currentSeasonScope === null) {
+    let saved = null;
+    try { saved = localStorage.getItem('tm-season-scope'); } catch(_) {}
+    if (saved !== null && (saved === '' || seasonsList.some(s => s.name === saved))) {
+      currentSeasonScope = saved;
+    } else {
+      const def = seasonsList.find(s => s.is_default);
+      currentSeasonScope = def ? def.name : '';
+    }
+  }
+}
+
+// Switch the active season scope. Re-fetches toolkit_wide with the new filter.
+function setSeasonScope(name) {
+  currentSeasonScope = name || '';
+  try { localStorage.setItem('tm-season-scope', currentSeasonScope); } catch(_) {}
+  loadData();
+}
+
+// Render the status pill next to the Season-Buy label. Hidden when scope is "All".
+function updateSeasonScopeBadge() {
+  const badge = document.getElementById('seasonScopeStatus');
+  if (!badge) return;
+  const s = currentSeasonScope ? seasonsList.find(x => x.name === currentSeasonScope) : null;
+  if (!s || !s.status) {
+    badge.style.display = 'none';
+    badge.className = 'badge season-status-pill';
+    badge.textContent = '';
+    return;
+  }
+  badge.className = 'badge season-status-pill ' + String(s.status).toLowerCase();
+  badge.textContent = s.status;
+  badge.style.display = 'inline-block';
+}
+
+async function loadData() {
+  // Make sure seasons + scope are resolved before the first toolkit fetch.
+  if (currentSeasonScope === null) await loadSeasons();
+
+  // Load the signed-in user's saved custom views once per session (before the
+  // saved-view restore in populateFilters can reference them).
+  if (!userViewsLoaded){ await loadUserViews(); userViewsLoaded = true; }
+
+  document.getElementById('tableBody').innerHTML = '<div class="loading">Loading data</div>';
+  document.getElementById('dbStatus').textContent = 'Loading';
+  try {
+    // Page through toolkit_wide in 1000-row windows to dodge PostgREST's default cap.
+    // Same pattern as the admin pagination fix from the 2026-05-31 session.
+    const PAGE = 1000;
+    let offset = 0;
+    const all = [];
+    while (true) {
+      let q = sb.from('toolkit_wide')
+        .select('*')
+        .order('pos_number')
+        .range(offset, offset + PAGE - 1);
+      if (currentSeasonScope) q = q.eq('pre_buy_program', currentSeasonScope);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = data || [];
+      all.push(...rows);
+      if (rows.length < PAGE) break;
+      offset += PAGE;
+    }
+    allItems = all;
+
+    updateCoverMeta(allItems);
+    document.getElementById('dbStatus').textContent = 'Connected';
+
+    populateFilters();
+    updateSeasonScopeBadge();
+    applyFilters();
+  } catch (e) {
+    console.error(e);
+    document.getElementById('tableBody').innerHTML = `<div class="empty-state"><p style="color:var(--red);">Failed to load data: ${escapeHtml(e.message || String(e))}</p><p style="margin-top:8px;font-size:11px;">Check SUPABASE_URL and SUPABASE_ANON in config.local.js.</p></div>`;
+    document.getElementById('dbStatus').textContent = 'Error';
+  }
+}
+
+let lookupsLoaded = false;
+async function ensureLookupsLoaded() {
+  if (lookupsLoaded) return;
+  const [brands, programs, vendors, itemTypes] = await Promise.all([
+    sb.from('brands').select('id,name').order('name'),
+    sb.from('programs').select('id,name,brand_id,focus_period').order('name'),
+    sb.from('vendors').select('id,name').order('name'),
+    sb.from('item_types').select('id,name,element_zone').order('name'),
+  ]);
+  allBrands = brands.data || [];
+  allPrograms = programs.data || [];
+  allVendors = vendors.data || [];
+  allItemTypes = itemTypes.data || [];
+  lookupsLoaded = true;
+}
+
+function populateFilters() {
+  const fBrand = document.getElementById('fBrand');
+  const fProgram = document.getElementById('fProgram');
+  const fVendor = document.getElementById('fVendor');
+  const fSeason = document.getElementById('fSeason');
+  const brandNames = [...new Set(allItems.map(i => i.brand_name).filter(Boolean))].sort();
+  const programNames = [...new Set(allItems.map(i => i.program_name).filter(Boolean))].sort();
+  const vendorNames = [...new Set(allItems.map(i => i.selected_vendor).filter(Boolean))].sort();
+  // Season options come from the seasons table (not derived from items) so
+  // every season is selectable even when the current scope excludes it.
+  // Order by the authoritative sort_order column (chronological by FY, then
+  // Summer → Holiday → Spring within each FY); name as a tiebreaker.
+  const seasonsSorted = [...seasonsList].sort((a, b) =>
+    (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name)
+  );
+  // Preserve current selections across rebuild — otherwise editing an item
+  // and saving (which triggers loadData → populateFilters) blows away every
+  // active filter and snaps the table back to "all items".
+  const prevBrand = fBrand.value;
+  const prevProgram = fProgram.value;
+  const prevVendor = fVendor.value;
+
+  fBrand.innerHTML = '<option value="">All brands</option>' + brandNames.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+  fProgram.innerHTML = '<option value="">All programs</option>' + programNames.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+  fVendor.innerHTML = '<option value="">All vendors</option>' + vendorNames.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+  fSeason.innerHTML = '<option value="">All seasons</option>' + seasonsSorted.map(s => {
+    const star = s.is_default ? ' ★' : '';
+    const sel = s.name === currentSeasonScope ? ' selected' : '';
+    return `<option value="${escapeHtml(s.name)}"${sel}>${escapeHtml(s.name)}${star}</option>`;
+  }).join('');
+
+  if (brandNames.includes(prevBrand)) fBrand.value = prevBrand;
+  if (programNames.includes(prevProgram)) fProgram.value = prevProgram;
+  if (vendorNames.includes(prevVendor)) fVendor.value = prevVendor;
+  // Season is driven by currentSeasonScope (server-side), and the matching
+  // option is already pre-selected in the innerHTML above.
+
+  document.querySelectorAll('#fCategory .f-chip').forEach(chip => {
+    chip.onclick = () => {
+      document.querySelectorAll('#fCategory .f-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeCategory = chip.dataset.val;
+      applyFilters();
+    };
+  });
+
+  // Restore saved view (run once on data load)
+  let savedView = null;
+  try { savedView = localStorage.getItem('tm-view'); } catch(_) {}
+  if (savedView && viewExists(savedView)) switchView(savedView);
+}
+
+function applyFilters() {
+  const bv = document.getElementById('fBrand').value;
+  const pv = document.getElementById('fProgram').value;
+  const vv = document.getElementById('fVendor').value;
+  // Season scope is enforced server-side via setSeasonScope → loadData;
+  // every row in allItems already matches the current scope.
+  const sv = (document.getElementById('fSearch').value || '').toLowerCase();
+  const filtered = allItems.filter(i => {
+    if (bv && i.brand_name !== bv) return false;
+    if (pv && i.program_name !== pv) return false;
+    if (vv && i.selected_vendor !== vv) return false;
+    if (activeCategory && i.item_category !== activeCategory) return false;
+    if (sv) {
+      const hay = [i.pos_number, i.item_description, i.description_extended, i.material, i.item_type, i.pre_buy_program].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(sv)) return false;
+    }
+    return true;
+  });
+  // Apply view-scoped sort before caching the rendered set.
+  const sorted = applySortIfActive(filtered);
+  currentFilteredCache = sorted;
+  renderTable(sorted);
+  updateCoverMeta(sorted);
+  updateTableHead();
+  updateBulkRunButton();
+  document.getElementById('filterCount').innerHTML = `<strong>${sorted.length}</strong> of ${allItems.length} items`;
+}
+
+function updateTableHead() {
+  const head = document.getElementById('tableHead');
+  if (!head) return;
+  const cols = getView(activeView).columns;
+  const sort = sortState[activeView];
+  head.innerHTML = cols.map((c, idx) => {
+    const sortable = c.sortKey || c.sortFn;
+    const isActive = sort && sort.colIdx === idx;
+    const cls = [sortable ? 'sortable' : '', isActive ? 'active-sort' : ''].filter(Boolean).join(' ');
+    const arrow = isActive ? `<span class="sort-arr">${sort.dir === 'asc' ? '↑' : '↓'}</span>` : '';
+    const click = sortable ? ` onclick="sortByColumn(${idx})"` : '';
+    return `<span class="${cls}"${click}>${escapeHtml(c.label)}${arrow}</span>`;
+  }).join('');
+}
+
+function updateCoverMeta(rows) {
+  document.getElementById('cm-items').textContent = rows.length.toLocaleString();
+  document.getElementById('cm-programs').textContent = new Set(rows.map(i => i.program_name).filter(Boolean)).size;
+  document.getElementById('cm-brands').textContent = new Set(rows.map(i => i.brand_name).filter(Boolean)).size;
+  document.getElementById('cm-vendors').textContent = new Set(rows.filter(i => i.selected_vendor).map(i => i.selected_vendor)).size;
+}
+
+// ============================================================
+// VIEWS — Airtable-style swappable column sets
+// ============================================================
+let activeView = 'standard';
+// Sort state is per-view so switching views keeps each view's chosen sort.
+// {colIdx, dir: 'asc' | 'desc'} or null = unsorted (data order).
+const sortState = { standard: null, planning: null, sourcing: null, moq: null };
+
+const DESC_TRUNCATE = 62;
+function truncate(s, n) {
+  if (!s) return '';
+  s = String(s);
+  return s.length <= n ? s : s.slice(0, n).trimEnd() + '…';
+}
+
+// Item Description renderer — truncates display text but keeps full text
+// available on hover via the title attribute.
+function renderDesc(i) {
+  const full = i.item_description || '';
+  return `<span class="desc" title="${escapeHtml(full)}">${escapeHtml(truncate(full, DESC_TRUNCATE) || '—')}</span>`;
+}
+
+// ─── Column catalog ───────────────────────────────────────────────
+// Single source of truth for every pickable data column: label, the field it
+// reads/sorts, a default width (used to build custom-view grids), and its cell
+// renderer. Built-in views and user-built custom views both assemble their
+// column lists from this catalog.
+function metaCell(v){ return `<span class="meta">${escapeHtml(v || '—')}</span>`; }
+function numCell(v){ return `<span class="num-mono">${fmtNum(v)}</span>`; }
+function catCell(v){ return `<span><span class="cat-badge cat-${v}">${escapeHtml(v || '—')}</span></span>`; }
+function descCell(v){ const f = v || ''; return `<span class="desc" title="${escapeHtml(f)}">${escapeHtml(truncate(f, 60) || '—')}</span>`; }
+function priceCell(v){
+  if (v == null || v === '') return `<span class="num-mono">—</span>`;
+  const x = Number(v);
+  return `<span class="num-mono">${Number.isFinite(x) ? '$' + x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</span>`;
+}
+
+const COLUMNS = {
+  pos_number:            { label:'POS #',                         sortKey:'pos_number',       width:'84px',              render:i=>`<span class="pos">${escapeHtml(i.pos_number||'—')}</span>` },
+  item_description:      { label:'Item Description',              sortKey:'item_description', width:'minmax(150px,1fr)', render:i=>descCell(i.item_description) },
+  sourcing_description:  { label:'Item Desc & Spec for Sourcing', sortKey:'sourcing_description', width:'minmax(150px,1fr)', render:i=>descCell(i.sourcing_description) },
+  description_extended:  { label:'Extended Description',          sortKey:'description_extended', width:'minmax(150px,1fr)', render:i=>descCell(i.description_extended) },
+  brand_name:            { label:'Brand',                         sortKey:'brand_name',       width:'100px',             render:i=>metaCell(i.brand_name) },
+  program_name:          { label:'Program',                       sortKey:'program_name',     width:'110px',             render:i=>metaCell(i.program_name) },
+  focus_period:          { label:'Focus Period',                  sortKey:'focus_period',     width:'88px',              render:i=>metaCell(i.focus_period) },
+  item_category:         { label:'Item Category',                 sortKey:'item_category',    width:'96px',              render:i=>catCell(i.item_category) },
+  item_type:             { label:'Item Type',                     sortKey:'item_type',        width:'104px',             render:i=>metaCell(i.item_type) },
+  standard_or_custom:    { label:'Standard/Custom Element',       sortKey:'standard_or_custom', width:'116px',           render:i=>metaCell(i.standard_or_custom) },
+  selected_vendor:       { label:'Vendor',                        sortKey:'selected_vendor',  width:'112px',             render:i=>metaCell(i.selected_vendor) },
+  lead_time:             { label:'Long/Short Lead',               sortKey:'lead_time',        width:'104px',             render:i=>metaCell(i.lead_time) },
+  pack_out_qty:          { label:'Pack Out',                      sortKey:'pack_out_qty', numeric:true, width:'74px',    render:i=>numCell(i.pack_out_qty) },
+  uom:                   { label:'UOM',                           sortKey:'uom',              width:'56px',              render:i=>`<span class="num-mono">${escapeHtml(i.uom||'—')}</span>` },
+  site_moq:              { label:'MOQ',                           sortKey:'site_moq', numeric:true, width:'62px',        render:i=>numCell(i.site_moq) },
+  pre_buy_status:        { label:'Status',                        sortKey:'pre_buy_status',   width:'96px',              render:i=>`<span>${statusBadge(i.pre_buy_status)}</span>` },
+  pre_buy_program:       { label:'Season-Buy',                    sortKey:'pre_buy_program',  width:'112px',             render:i=>metaCell(i.pre_buy_program) },
+  material:              { label:'Material',                      sortKey:'material',         width:'120px',             render:i=>metaCell(i.material) },
+  selected_total_unit_price:{ label:'Unit Price',                sortKey:'selected_total_unit_price', numeric:true, width:'92px', render:i=>priceCell(i.selected_total_unit_price) },
+  country_code:          { label:'Country',                       sortKey:'country_code',     width:'80px',              render:i=>metaCell(i.country_code) },
+  new_or_rerun:          { label:'New/Rerun',                     sortKey:'new_or_rerun',     width:'96px',              render:i=>metaCell(i.new_or_rerun) },
+  ims_job_no:            { label:'IMS Job #',                     sortKey:'ims_job_no',       width:'92px',              render:i=>metaCell(i.ims_job_no) },
+  abc_po_no:             { label:'ABC PO #',                      sortKey:'abc_po_no',        width:'92px',              render:i=>metaCell(i.abc_po_no) },
+};
+
+// Assemble a column list from catalog ids. Each spec is either an id string or
+// {id, label} to override the catalog's default label for a built-in view.
+function pickCols(...specs){
+  return specs.map(s => {
+    if (typeof s === 'string') return COLUMNS[s];
+    const base = COLUMNS[s.id];
+    return base ? { ...base, label: s.label ?? base.label } : null;
+  }).filter(Boolean);
+}
+
+// The trailing "Edit ›" affordance used by the built-in Standard / MOQ views.
+const ACTION_COL = { label:'Action', render:()=>`<span class="edit">Edit ›</span>` };
+
+const VIEWS = {
+  standard: {
+    id: 'standard',
+    label: 'Standard',
+    hint: 'Browse + edit toolkit items',
+    showMoqBar: false,
+    columns: [
+      ...pickCols('pos_number','item_description','program_name',
+        {id:'item_type',label:'Type'}, {id:'item_category',label:'Category'},
+        {id:'selected_vendor',label:'Vendor'}, 'pre_buy_status'),
+      ACTION_COL,
+    ],
+  },
+  planning: {
+    id: 'planning',
+    label: 'Toolkit Planning',
+    hint: 'Planning fields — POS through MOQ. Read-only overview; click a row to edit.',
+    showMoqBar: false,
+    columns: pickCols('pos_number','brand_name','program_name','focus_period',
+      'item_category','item_type','item_description','pack_out_qty','uom','site_moq'),
+  },
+  sourcing: {
+    id: 'sourcing',
+    label: 'Sourcing',
+    hint: 'Sourcing fields — lead time, vendor, spec. Read-only overview; click a row to edit.',
+    showMoqBar: false,
+    columns: pickCols('lead_time', {id:'selected_vendor',label:'Sourcing Vendor'},
+      'pos_number','brand_name','program_name','focus_period','item_category','item_type',
+      'standard_or_custom','item_description',
+      {id:'sourcing_description',label:'Item Description & Spec for Sourcing'},
+      'pack_out_qty','uom','site_moq'),
+  },
+  moq: {
+    id: 'moq',
+    label: 'MOQ Workbench',
+    hint: 'Analyze + set MOQ. Cached analyses load free; Run burns Claude tokens.',
+    showMoqBar: true,
+    columns: [
+      { label: 'POS #',            sortKey: 'pos_number',       render: i => `<span class="pos">${escapeHtml(i.pos_number || '—')}</span>` },
+      { label: 'Item Description', sortKey: 'item_description', render: renderDesc },
+      { label: 'Brand',            sortKey: 'brand_name',       render: i => `<span class="meta">${escapeHtml(i.brand_name || '—')}</span>` },
+      { label: 'Program',          sortKey: 'program_name',     render: i => `<span class="meta">${escapeHtml(i.program_name || '—')}</span>` },
+      { label: 'Category',         sortKey: 'item_category',    render: i => `<span><span class="cat-badge cat-${i.item_category}">${escapeHtml(i.item_category)}</span></span>` },
+      { label: 'Item Type',        sortKey: 'item_type',        render: i => `<span class="meta">${escapeHtml(i.item_type || '—')}</span>` },
+      { label: 'Current MOQ',      sortKey: 'site_moq', numeric: true, render: i => `<span class="num-mono">${fmtNum(i.site_moq)}</span>` },
+      { label: 'Chosen MOQ',       sortFn: i => moqSortValue(i), numeric: true, render: i => renderChosenMoqCell(i) },
+      ACTION_COL,
+    ],
+  },
+};
+
+// ─── Custom views (user-defined, per-user via Supabase) ───────────
+// Persist in toolkit_user_views so a user's views follow them across
+// browsers/devices. DB row: { id, user_id, name, column_ids }.
+// In memory: { id, name, columnIds }.
+let customViews = [];        // loaded per signed-in user
+let editorState = null;      // scratch state while the column-picker modal is open
+let userViewsLoaded = false; // guards the one-time fetch per session
+
+async function loadUserViews(){
+  const { data, error } = await sb.from('toolkit_user_views')
+    .select('id, name, column_ids')
+    .order('created_at');
+  if (error){ console.error('Failed to load user views:', error); return; }
+  customViews = (data || []).map(r => ({
+    id: r.id,
+    name: r.name,
+    columnIds: Array.isArray(r.column_ids) ? r.column_ids : [],
+  }));
+  await migrateLocalViews();   // lift any pre-account browser-local views once
+  populateViewSelect();
+}
+
+// One-time migration: if this browser still has views saved locally from the
+// pre-account version, push them to the DB (skipping name clashes), then clear
+// the local copy so it doesn't re-migrate.
+async function migrateLocalViews(){
+  let local = [];
+  try { local = JSON.parse(localStorage.getItem('tm-custom-views') || '[]'); } catch(_) {}
+  if (!Array.isArray(local) || !local.length) return;
+  const have = new Set(customViews.map(v => v.name.toLowerCase()));
+  for (const v of local){
+    if (!v || !v.name || !Array.isArray(v.columnIds) || have.has(String(v.name).toLowerCase())) continue;
+    const { data, error } = await sb.from('toolkit_user_views')
+      .insert({ name: v.name, column_ids: v.columnIds }).select('id, name, column_ids').single();
+    if (!error && data){
+      customViews.push({ id: data.id, name: data.name, columnIds: data.column_ids || [] });
+      have.add(String(v.name).toLowerCase());
+    }
+  }
+  try { localStorage.removeItem('tm-custom-views'); } catch(_) {}
+}
+
+async function createUserView(name, columnIds){
+  const { data, error } = await sb.from('toolkit_user_views')
+    .insert({ name, column_ids: columnIds }).select('id, name, column_ids').single();
+  if (error) throw error;
+  customViews.push({ id: data.id, name: data.name, columnIds: data.column_ids || [] });
+  return data.id;
+}
+async function updateUserView(id, name, columnIds){
+  const { error } = await sb.from('toolkit_user_views')
+    .update({ name, column_ids: columnIds }).eq('id', id);
+  if (error) throw error;
+  const cv = customViews.find(v => v.id === id);
+  if (cv){ cv.name = name; cv.columnIds = [...columnIds]; }
+}
+async function deleteUserView(id){
+  const { error } = await sb.from('toolkit_user_views').delete().eq('id', id);
+  if (error) throw error;
+  customViews = customViews.filter(v => v.id !== id);
+}
+
+function viewExists(id){ return !!VIEWS[id] || customViews.some(v => v.id === id); }
+
+// Resolve a view id (built-in or custom) to a view object with a columns array.
+function getView(id){
+  if (VIEWS[id]) return VIEWS[id];
+  const cv = customViews.find(v => v.id === id);
+  if (cv) return {
+    id: cv.id,
+    label: cv.name,
+    hint: `Custom view · ${cv.columnIds.length} column${cv.columnIds.length === 1 ? '' : 's'}`,
+    showMoqBar: false,
+    custom: true,
+    columns: cv.columnIds.map(cid => COLUMNS[cid]).filter(Boolean),
+  };
+  return VIEWS.standard;
+}
+
+// Custom views can't use a static CSS grid (columns are dynamic), so inject one
+// <style> rule reflecting the active custom view's column widths.
+function applyCustomGrid(view){
+  let st = document.getElementById('customGridStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'customGridStyle'; document.head.appendChild(st); }
+  const cols = view.columns;
+  let fixed = 0, flex = 0;
+  const tmpl = cols.map(c => {
+    const w = c.width || '110px';
+    const m = /^(\d+)px$/.exec(w);
+    if (m) fixed += +m[1]; else flex += 1;
+    return w;
+  }).join(' ');
+  const mw = fixed + flex * 160 + Math.max(0, cols.length - 1) * 6 + 28;
+  st.textContent =
+    `.panel[data-view="custom"] .t-head,.panel[data-view="custom"] .t-row{grid-template-columns:${tmpl};min-width:${mw}px}` +
+    `.panel[data-view="custom"] .table-wrap{overflow-x:auto}`;
+}
+
+// Build the view dropdown from built-in VIEWS + saved custom views.
+function populateViewSelect() {
+  const sel = document.getElementById('viewSelect');
+  if (!sel) return;
+  const builtin = Object.values(VIEWS)
+    .map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.label)}</option>`).join('');
+  const custom = customViews
+    .map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`).join('');
+  sel.innerHTML = builtin + (custom ? `<optgroup label="Custom views">${custom}</optgroup>` : '');
+  sel.value = activeView;
+}
+// Built-ins render immediately; the user's saved views load after sign-in.
+populateViewSelect();
+
+// Sort source for Chosen MOQ — prefers the in-memory bulkMoq pick, falls
+// back to cached AI pick, then null. Keeps the column sortable even when
+// only some rows have been analyzed.
+function moqSortValue(item) {
+  const r = bulkMoq.results.get(item.toolkit_item_id);
+  if (r && r.chosen != null) return r.chosen;
+  const cached = item.moq_recommendation;
+  if (cached && cached.ai && !cached.ai._error) return _toNum(cached.ai.ai_recommended_moq);
+  if (cached && cached.statistical) return _toNum(cached.statistical.adjusted_recommendation);
+  return null;
+}
+
+// Click handler for sortable column headers. Three-state cycle:
+//   unsorted → asc → desc → unsorted (back to data order)
+function sortByColumn(idx) {
+  const cols = getView(activeView).columns;
+  const col = cols[idx];
+  if (!col.sortKey && !col.sortFn) return;
+  const current = sortState[activeView];
+  if (current && current.colIdx === idx) {
+    if (current.dir === 'asc') sortState[activeView] = { colIdx: idx, dir: 'desc' };
+    else sortState[activeView] = null;  // clear
+  } else {
+    sortState[activeView] = { colIdx: idx, dir: 'asc' };
+  }
+  applyFilters();
+}
+
+function applySortIfActive(rows) {
+  const sort = sortState[activeView];
+  if (!sort) return rows;
+  const cols = getView(activeView).columns;
+  const col = cols[sort.colIdx];
+  if (!col) return rows;
+  const getter = col.sortFn || (i => i[col.sortKey]);
+  const numeric = !!col.numeric;
+  const sorted = [...rows].sort((a, b) => {
+    const av = getter(a), bv = getter(b);
+    // Nulls always sort last regardless of dir
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (numeric || (typeof av === 'number' && typeof bv === 'number')) {
+      return sort.dir === 'asc' ? av - bv : bv - av;
+    }
+    return sort.dir === 'asc'
+      ? String(av).localeCompare(String(bv))
+      : String(bv).localeCompare(String(av));
+  });
+  return sorted;
+}
+
+function switchView(viewId) {
+  if (!viewExists(viewId)) return;
+  const view = getView(viewId);
+  activeView = viewId;
+  try { localStorage.setItem('tm-view', viewId); } catch(_) {}
+
+  // Update panel attribute (drives CSS grid template). Custom views share a
+  // single data-view="custom" slot whose grid is injected on the fly.
+  if (view.custom) applyCustomGrid(view);
+  document.getElementById('tablePanel').dataset.view = view.custom ? 'custom' : viewId;
+
+  // Sync the dropdown selection
+  const sel = document.getElementById('viewSelect');
+  if (sel && sel.value !== viewId) sel.value = viewId;
+
+  // Update hint text
+  document.getElementById('viewHint').textContent = view.hint || '';
+
+  // MOQ action bar visibility
+  document.getElementById('moqActionBar').style.display = view.showMoqBar ? 'flex' : 'none';
+
+  // Toggle the "Edit columns" affordance for custom views
+  updateCustomizeBtn(view);
+
+  // Re-render with new column set
+  renderTable(currentFilteredCache);
+  updateTableHead();
+  if (viewId === 'moq') updateBulkRunButton();
+}
+
+// Reflect the active view in the Customize button (edit an existing custom
+// view, or create a new one from a built-in).
+function updateCustomizeBtn(view){
+  const btn = document.getElementById('btnCustomize');
+  if (!btn) return;
+  btn.textContent = view && view.custom ? 'Edit columns' : 'Customize';
+}
+
+// ─── Column-picker modal ──────────────────────────────────────────
+// Open the editor. On a custom view it edits that view; on a built-in it seeds
+// a new custom view from whatever catalog-backed columns that view shows.
+function openViewEditor(){
+  const active = getView(activeView);
+  if (active.custom){
+    const cv = customViews.find(v => v.id === activeView);
+    editorState = { editingId: cv.id, name: cv.name, selected: cv.columnIds.filter(id => COLUMNS[id]) };
+  } else {
+    const seed = active.columns.map(c => c.sortKey).filter(k => k && COLUMNS[k]);
+    editorState = { editingId: null, name: '', selected: seed.length ? [...new Set(seed)] : ['pos_number','item_description'] };
+  }
+  renderViewEditor();
+  document.getElementById('viewEditorBack').classList.add('open');
+  const nameEl = document.getElementById('veName');
+  nameEl.value = editorState.name;
+  if (!editorState.editingId) setTimeout(() => nameEl.focus(), 30);
+}
+
+function closeViewEditor(){
+  document.getElementById('viewEditorBack').classList.remove('open');
+  editorState = null;
+}
+
+function renderViewEditor(){
+  if (!editorState) return;
+  document.getElementById('veEyebrow').textContent = editorState.editingId ? 'Edit custom view' : 'New custom view';
+  document.getElementById('veDelete').style.display = editorState.editingId ? 'inline-flex' : 'none';
+  document.getElementById('veSelCount').textContent = `(${editorState.selected.length})`;
+
+  const sel = editorState.selected;
+  document.getElementById('veSelected').innerHTML = sel.length ? sel.map((id, idx) => {
+    const c = COLUMNS[id]; if (!c) return '';
+    return `<div class="ve-item">
+      <span class="ve-name" title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</span>
+      <button class="ve-btn" title="Move up" onclick="editorMove('${id}',-1)" ${idx===0?'disabled':''}>↑</button>
+      <button class="ve-btn" title="Move down" onclick="editorMove('${id}',1)" ${idx===sel.length-1?'disabled':''}>↓</button>
+      <button class="ve-btn rm" title="Remove" onclick="editorRemove('${id}')">✕</button>
+    </div>`;
+  }).join('') : `<div class="ve-empty">No columns yet — add some from the right.</div>`;
+
+  const avail = Object.keys(COLUMNS).filter(id => !sel.includes(id));
+  document.getElementById('veAvailable').innerHTML = avail.length ? avail.map(id => {
+    const c = COLUMNS[id];
+    return `<div class="ve-item">
+      <span class="ve-name" title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</span>
+      <button class="ve-btn" title="Add" onclick="editorAdd('${id}')">＋</button>
+    </div>`;
+  }).join('') : `<div class="ve-empty">All columns added.</div>`;
+}
+
+function editorAdd(id){ if (editorState && COLUMNS[id] && !editorState.selected.includes(id)){ editorState.selected.push(id); renderViewEditor(); } }
+function editorRemove(id){ if (editorState){ editorState.selected = editorState.selected.filter(x => x !== id); renderViewEditor(); } }
+function editorMove(id, dir){
+  if (!editorState) return;
+  const arr = editorState.selected;
+  const i = arr.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  renderViewEditor();
+}
+
+async function saveViewEditor(){
+  if (!editorState) return;
+  const name = (document.getElementById('veName').value || '').trim();
+  if (!name){ showToast('Give the view a name', 'error'); document.getElementById('veName').focus(); return; }
+  if (!editorState.selected.length){ showToast('Add at least one column', 'error'); return; }
+
+  const saveBtn = document.getElementById('veSave');
+  saveBtn.disabled = true;
+  try {
+    let id = editorState.editingId;
+    if (id) await updateUserView(id, name, editorState.selected);
+    else    id = await createUserView(name, editorState.selected);
+    populateViewSelect();
+    closeViewEditor();
+    switchView(id);
+    showToast('View saved', 'success');
+  } catch (e){
+    console.error('Save view failed:', e);
+    showToast('Could not save view — try again', 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function deleteViewEditor(){
+  if (!editorState || !editorState.editingId) return;
+  const id = editorState.editingId;
+  const delBtn = document.getElementById('veDelete');
+  delBtn.disabled = true;
+  try {
+    await deleteUserView(id);
+    populateViewSelect();
+    closeViewEditor();
+    if (activeView === id) switchView('standard');
+    else { const sel = document.getElementById('viewSelect'); if (sel) sel.value = activeView; }
+    showToast('View deleted', 'success');
+  } catch (e){
+    console.error('Delete view failed:', e);
+    showToast('Could not delete view — try again', 'error');
+  } finally {
+    delBtn.disabled = false;
+  }
+}
+
+function renderTable(rows) {
+  const body = document.getElementById('tableBody');
+  if (!rows.length) {
+    body.innerHTML = `<div class="empty-state">
+      <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <p>No items match the current filters.</p>
+    </div>`;
+    return;
+  }
+  const cols = getView(activeView).columns;
+  body.innerHTML = rows.map(i => {
+    const cells = cols.map(c => c.render(i)).join('');
+    return `<div class="t-row" data-itemid="${i.toolkit_item_id}" onclick="onRowClick(event, '${i.toolkit_item_id}')">${cells}</div>`;
+  }).join('');
+}
+
+function onRowClick(e, itemId) {
+  // If the click came from inside an interactive MOQ cell, don't open the drawer
+  if (e.target.closest('.moq-tiles, .moq-cell-chosen, .moq-info-btn')) return;
+  openDrawer(itemId);
+}
+
+// ---- MOQ-view specific cell renderers ----
+
+// Single merged "Chosen MOQ" cell: PY + AI tiles inline. The active tile
+// IS the chosen value (no separate number display). Dirty dot appears on
+// the active tile if its value differs from the row's current site_moq.
+function renderChosenMoqCell(item) {
+  const r = bulkMoq.results.get(item.toolkit_item_id);
+  const itemId = item.toolkit_item_id;
+  const currentMoq = _toNum(item.site_moq);
+
+  // Case A: row has been bulk-analyzed (in current session)
+  if (r) {
+    if (r.pending) return `<span class="moq-cell-status pending">analyzing…</span>`;
+    if (r.error)   return `<span class="moq-cell-status error" title="${escapeHtml(r.error)}">error</span>`;
+
+    const pyActive = r.source === 'py';
+    const aiActive = r.source === 'ai';
+    const pyDisabled = r.py == null;
+    const aiDisabled = r.ai == null;
+    const dirty = r.chosen != null && r.chosen !== r.original_site_moq;
+
+    return `<div class="moq-chosen-merged">
+      <div class="moq-tiles">
+        <div class="moq-tile py ${pyActive ? 'active' : ''} ${pyDisabled ? 'disabled' : ''} ${pyActive && dirty ? 'dirty' : ''}"
+             onclick="if(!${pyDisabled})chooseMoq('${itemId}', 'py')">
+          <span class="lbl">PY</span><span class="num">${fmtNum(r.py)}</span>
+        </div>
+        <div class="moq-tile ai ${aiActive ? 'active' : ''} ${aiDisabled ? 'disabled' : ''} ${aiActive && dirty ? 'dirty' : ''}"
+             onclick="if(!${aiDisabled})chooseMoq('${itemId}', 'ai')">
+          <span class="lbl">AI</span><span class="num">${fmtNum(r.ai)}</span>
+        </div>
+      </div>
+      <button class="moq-info-btn" onclick="event.stopPropagation();openMoqPopover('${itemId}')"
+              ${r.analysis ? '' : 'disabled'} title="View AI analysis">ⓘ</button>
+    </div>`;
+  }
+
+  // Case B: not in bulk state but has cached analysis on the item itself
+  if (item.moq_recommendation && item.moq_recommendation.statistical) {
+    const cached = item.moq_recommendation;
+    const py = _toNum(cached.statistical?.adjusted_recommendation);
+    const ai = (cached.ai && !cached.ai._error) ? _toNum(cached.ai.ai_recommended_moq) : null;
+    const pyDisabled = py == null;
+    const aiDisabled = ai == null;
+    // Default-picked tile is AI (matches the "Chosen MOQ defaults to AI" rule).
+    // Tiles aren't yet "committed" — clicking promotes the row into the workbench
+    // state so Save can pick it up.
+    return `<div class="moq-chosen-merged">
+      <div class="moq-tiles">
+        <div class="moq-tile py ${pyDisabled ? 'disabled' : ''}"
+             onclick="if(!${pyDisabled})promoteAndChoose('${itemId}', 'py')">
+          <span class="lbl">PY</span><span class="num">${fmtNum(py)}</span>
+        </div>
+        <div class="moq-tile ai active ${aiDisabled ? 'disabled' : ''}"
+             onclick="if(!${aiDisabled})promoteAndChoose('${itemId}', 'ai')">
+          <span class="lbl">AI</span><span class="num">${fmtNum(ai)}</span>
+        </div>
+      </div>
+      <button class="moq-info-btn" onclick="event.stopPropagation();openCachedAnalysisPopover('${itemId}')" title="View cached analysis">ⓘ</button>
+    </div>`;
+  }
+
+  // Case C: no analysis at all — show em-dash, no tiles
+  return `<span class="moq-cell-status">—</span>`;
+}
+
+// Promote a cached-but-not-bulk-loaded item into bulkMoq.results so chooseMoq
+// + Save work uniformly. Used when the user clicks a tile in MOQ view on a
+// row whose analysis was loaded from disk (not the bulk run).
+function promoteAndChoose(itemId, source) {
+  const item = allItems.find(it => it.toolkit_item_id === itemId);
+  if (!item || !item.moq_recommendation) return;
+  const cached = item.moq_recommendation;
+  const py = _toNum(cached.statistical?.adjusted_recommendation);
+  const ai = (cached.ai && !cached.ai._error) ? _toNum(cached.ai.ai_recommended_moq) : null;
+  const initialChosen = ai != null ? ai : py;
+  bulkMoq.results.set(itemId, {
+    py, ai,
+    chosen: initialChosen,
+    source: ai != null ? 'ai' : (py != null ? 'py' : null),
+    original_site_moq: _toNum(item.site_moq),
+    analysis: { ...cached, cached: true, computed_at: item.moq_recommended_at },
+    pending: false,
+    cached: true,
+  });
+  chooseMoq(itemId, source);
+}
+
+function openCachedAnalysisPopover(itemId) {
+  const item = allItems.find(it => it.toolkit_item_id === itemId);
+  if (!item || !item.moq_recommendation) return;
+  // Reuse the existing popover by mirroring the cached payload into bulkMoq.results
+  promoteAndChoose(itemId, 'ai');  // no-op if already promoted
+  openMoqPopover(itemId);
+}
+
+function statusBadge(s) {
+  if (!s) return '<span class="meta">—</span>';
+  const cls = s === 'include' ? 'status-include' : s === 'removed' ? 'status-removed' : s === 'POD' ? 'status-pod' : '';
+  return `<span class="status-badge ${cls}">${escapeHtml(s)}</span>`;
+}
+
+// ============================================================
+// DRAWER (create / edit / delete)
+// ============================================================
+async function openDrawer(id) {
+  currentDrawerId = id;
+  document.getElementById('btnDelete').style.display = id ? 'inline-flex' : 'none';
+
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawerBackdrop').classList.add('open');
+  document.getElementById('drawerBody').innerHTML = '<div class="loading">Loading</div>';
+
+  const lookupsPromise = ensureLookupsLoaded();
+  let item = null, specs = null;
+  if (id) {
+    const [i, s] = await Promise.all([
+      sb.from('toolkit_items').select('*').eq('id', id).maybeSingle(),
+      sb.from('paper_specs').select('*').eq('toolkit_item_id', id).maybeSingle(),
+    ]);
+    item = i.data; specs = s.data;
+    currentDrawerCategory = item?.category || 'paper';
+    document.getElementById('drawerPos').textContent = item?.pos_number || 'No POS #';
+    document.getElementById('drawerTitle').textContent = item?.item_description || '(no description)';
+  } else {
+    currentDrawerCategory = 'paper';
+    document.getElementById('drawerPos').textContent = 'New Item';
+    document.getElementById('drawerTitle').textContent = 'Create Toolkit Item';
+  }
+  await lookupsPromise;
+
+  document.getElementById('drawerBody').innerHTML = drawerForm(item || {}, specs || {});
+  document.getElementById('f_category').addEventListener('change', e => {
+    currentDrawerCategory = e.target.value;
+    document.getElementById('paperSpecsSection').style.display = currentDrawerCategory === 'paper' ? 'block' : 'none';
+  });
+  document.getElementById('paperSpecsSection').style.display = currentDrawerCategory === 'paper' ? 'block' : 'none';
+
+  // If this item already has a saved MOQ analysis, render it into the
+  // panel right away — zero Claude spend, user sees the prior result
+  // instantly. The Re-run button burns fresh tokens only on explicit click.
+  if (item && item.moq_recommendation) {
+    renderCachedMoq(item.moq_recommendation, id, item.moq_recommended_at);
+  }
+}
+
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawerBackdrop').classList.remove('open');
+  currentDrawerId = null;
+}
+
+function drawerForm(i, s) {
+  const opt = (val, list, valKey='id', labelKey='name') => {
+    return `<option value="">—</option>` + list.map(x => `<option value="${escapeHtml(x[valKey])}"${x[valKey] === val ? ' selected' : ''}>${escapeHtml(x[labelKey])}</option>`).join('');
+  };
+  return `
+    <div class="field-section" style="margin-top:0;padding-top:0;border-top:none">
+      <div class="field-section-head">Core</div>
+      <div class="field"><label class="field-lbl">Item Description *</label>
+        <input class="field-input" id="f_item_description" value="${escapeHtml(i.item_description || '')}" required></div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">POS Number</label>
+          <input class="field-input" id="f_pos_number" value="${escapeHtml(i.pos_number || '')}"></div>
+        <div class="field"><label class="field-lbl">Category *</label>
+          <select class="field-select" id="f_category">
+            <option value="paper"${i.category === 'paper' || !i.category ? ' selected' : ''}>Paper</option>
+            <option value="display"${i.category === 'display' ? ' selected' : ''}>Display</option>
+            <option value="premium"${i.category === 'premium' ? ' selected' : ''}>Premium</option>
+          </select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Program *</label>
+          <select class="field-select" id="f_program_id">${opt(i.program_id, allPrograms.map(p => ({id: p.id, name: p.name + (p.focus_period ? ' · ' + p.focus_period : '')})))}</select></div>
+        <div class="field"><label class="field-lbl">Item Type</label>
+          <select class="field-select" id="f_item_type_id">${opt(i.item_type_id, allItemTypes)}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Sub-Category</label>
+          <input class="field-input" id="f_item_sub_category" value="${escapeHtml(i.item_sub_category || '')}"></div>
+        <div class="field"><label class="field-lbl">Standard / Custom</label>
+          <input class="field-input" id="f_standard_or_custom" value="${escapeHtml(i.standard_or_custom || '')}"></div>
+      </div>
+      <div class="field"><label class="field-lbl">Description Extended</label>
+        <textarea class="field-textarea" id="f_description_extended">${escapeHtml(i.description_extended || '')}</textarea></div>
+      <div class="field"><label class="field-lbl">Sourcing Description</label>
+        <textarea class="field-textarea" id="f_sourcing_description">${escapeHtml(i.sourcing_description || '')}</textarea></div>
+      <div class="field"><label class="field-lbl">Storefront Image URL</label>
+        <input class="field-input" id="f_shop_image_url" value="${escapeHtml(i.shop_image_url || '')}" placeholder="https://… — product photo shown on /shop (blank = placeholder tile)"></div>
+    </div>
+
+    <div class="field-section">
+      <div class="field-section-head">Production</div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Pack Out Qty</label>
+          <input class="field-input" type="number" step="any" id="f_pack_out_qty" value="${i.pack_out_qty ?? ''}"></div>
+        <div class="field"><label class="field-lbl">UOM</label>
+          <input class="field-input" id="f_uom" value="${escapeHtml(i.uom || '')}" placeholder="CT / PK / RL / PD / EA"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Shipping Wave</label>
+          <input class="field-input" id="f_shipping_wave" value="${escapeHtml(i.shipping_wave || '')}"></div>
+        <div class="field"><label class="field-lbl">Lead Time</label>
+          <input class="field-input" id="f_lead_time" value="${escapeHtml(i.lead_time || '')}" placeholder="Long / Short"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">New or Rerun</label>
+          <input class="field-input" id="f_new_or_rerun" value="${escapeHtml(i.new_or_rerun || '')}"></div>
+        <div class="field"><label class="field-lbl">Program Status</label>
+          <select class="field-select" id="f_pre_buy_status">
+            <option value=""></option>
+            <option value="include"${i.pre_buy_status === 'include' ? ' selected' : ''}>include</option>
+            <option value="removed"${i.pre_buy_status === 'removed' ? ' selected' : ''}>removed</option>
+            <option value="POD"${i.pre_buy_status === 'POD' ? ' selected' : ''}>POD</option>
+          </select></div>
+      </div>
+    </div>
+
+    <div class="field-section">
+      <div class="field-section-head">Sourcing</div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Vendor</label>
+          <select class="field-select" id="f_vendor_id">${opt(i.vendor_id, allVendors)}</select></div>
+        <div class="field"><label class="field-lbl">Buyer</label>
+          <input class="field-input" id="f_buyer" value="${escapeHtml(i.buyer || '')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Country</label>
+          <input class="field-input" id="f_country_code" value="${escapeHtml(i.country_code || '')}" placeholder="US / CN / MX"></div>
+        <div class="field"><label class="field-lbl">IMS Job #</label>
+          <input class="field-input" id="f_ims_job_no" value="${escapeHtml(i.ims_job_no || '')}"></div>
+      </div>
+    </div>
+
+    <div class="field-section" id="paperSpecsSection">
+      <div class="field-section-head">Paper Specs</div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Flat Size</label>
+          <input class="field-input" id="f_flat_size" value="${escapeHtml(s.flat_size || '')}"></div>
+        <div class="field"><label class="field-lbl">Finished Size</label>
+          <input class="field-input" id="f_finished_size" value="${escapeHtml(s.finished_size || '')}"></div>
+      </div>
+      <div class="field"><label class="field-lbl">Material</label>
+        <input class="field-input" id="f_material" value="${escapeHtml(s.material || '')}"></div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Coated / Uncoated</label>
+          <input class="field-input" id="f_coated_uncoated" value="${escapeHtml(s.coated_uncoated || '')}"></div>
+        <div class="field"><label class="field-lbl"># Colors</label>
+          <input class="field-input" id="f_num_colors" value="${escapeHtml(s.num_colors || '')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-lbl">Coating</label>
+          <input class="field-input" id="f_coating" value="${escapeHtml(s.coating || '')}"></div>
+        <div class="field"><label class="field-lbl">Finishing</label>
+          <input class="field-input" id="f_finishing" value="${escapeHtml(s.finishing || '')}"></div>
+      </div>
+      <div class="field"><label class="field-lbl">Collating / Bundling</label>
+        <input class="field-input" id="f_collating" value="${escapeHtml(s.collating || '')}"></div>
+      <div class="field"><label class="field-lbl">Same / Different Art</label>
+        <input class="field-input" id="f_same_different_art" value="${escapeHtml(s.same_different_art || '')}"></div>
+    </div>
+
+    ${currentDrawerId ? `
+    <div class="field-section moq-section" id="moqSection">
+      <div class="field-section-head">MOQ Recommendation <span class="ai-pill">AI</span></div>
+      <div class="moq-intro">
+        Pulls historical records matching <strong>this brand</strong> + <strong>category</strong> + <strong>item type</strong>,
+        scoped to the same season (extracted from <code>pre_buy_program</code>).
+        Statistical baseline runs in Python; Claude adds a judgment layer.
+      </div>
+      <div id="moqBody">
+        <button class="btn-moq" onclick="loadMoqRecommendation('${currentDrawerId}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          Get MOQ Recommendation
+        </button>
+      </div>
+    </div>
+    ` : ''}
+  `;
+}
+
+async function saveItem() {
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const v = id => document.getElementById('f_' + id).value;
+    const vNum = id => { const x = v(id); return x === '' ? null : Number(x); };
+    const vOrNull = id => v(id).trim() || null;
+    const vUuid = id => v(id) || null;
+
+    if (!v('item_description').trim()) { showToast('Item description is required', 'error'); btn.disabled = false; btn.textContent = 'Save'; return; }
+    if (!vUuid('program_id')) { showToast('Program is required', 'error'); btn.disabled = false; btn.textContent = 'Save'; return; }
+
+    const payload = {
+      program_id: vUuid('program_id'),
+      item_type_id: vUuid('item_type_id'),
+      vendor_id: vUuid('vendor_id'),
+      pos_number: vOrNull('pos_number'),
+      category: v('category'),
+      item_description: vOrNull('item_description'),
+      description_extended: vOrNull('description_extended'),
+      sourcing_description: vOrNull('sourcing_description'),
+      shop_image_url: vOrNull('shop_image_url'),
+      item_sub_category: vOrNull('item_sub_category'),
+      standard_or_custom: vOrNull('standard_or_custom'),
+      pack_out_qty: vNum('pack_out_qty'),
+      uom: vOrNull('uom'),
+      shipping_wave: vOrNull('shipping_wave'),
+      lead_time: vOrNull('lead_time'),
+      new_or_rerun: vOrNull('new_or_rerun'),
+      pre_buy_status: vOrNull('pre_buy_status'),
+      buyer: vOrNull('buyer'),
+      country_code: vOrNull('country_code'),
+      ims_job_no: vOrNull('ims_job_no'),
+    };
+
+    let itemId = currentDrawerId;
+    if (itemId) {
+      const { error } = await sb.from('toolkit_items').update(payload).eq('id', itemId);
+      if (error) throw error;
+    } else {
+      const { data, error } = await sb.from('toolkit_items').insert(payload).select('id').single();
+      if (error) throw error;
+      itemId = data.id;
+    }
+
+    if (v('category') === 'paper') {
+      const specs = {
+        toolkit_item_id: itemId,
+        flat_size: vOrNull('flat_size'),
+        finished_size: vOrNull('finished_size'),
+        material: vOrNull('material'),
+        coated_uncoated: vOrNull('coated_uncoated'),
+        num_colors: vOrNull('num_colors'),
+        coating: vOrNull('coating'),
+        finishing: vOrNull('finishing'),
+        collating: vOrNull('collating'),
+        same_different_art: vOrNull('same_different_art'),
+      };
+      const { error } = await sb.from('paper_specs').upsert(specs);
+      if (error) throw error;
+    } else {
+      await sb.from('paper_specs').delete().eq('toolkit_item_id', itemId);
+    }
+
+    showToast('Saved', 'success');
+    closeDrawer();
+    await loadData();
+  } catch (e) {
+    console.error(e);
+    showToast('Save failed: ' + (e.message || e), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function deleteItem() {
+  if (!currentDrawerId) return;
+  if (!confirm('Delete this toolkit item? Paper specs and any linked quotes/orders will also be removed.')) return;
+  try {
+    const { error } = await sb.from('toolkit_items').delete().eq('id', currentDrawerId);
+    if (error) throw error;
+    showToast('Deleted', 'success');
+    closeDrawer();
+    await loadData();
+  } catch (e) {
+    console.error(e);
+    showToast('Delete failed: ' + (e.message || e), 'error');
+  }
+}
+
+// ============================================================
+// BULK MOQ WORKBENCH
+// ============================================================
+const MOQ_BULK_CAP = 150;
+const MOQ_CONCURRENCY = 4;
+const MOQ_SECONDS_PER_ITEM = 4;  // wall-clock estimate per item with concurrency
+const MOQ_COST_PER_ITEM = 0.005;  // rough Claude token cost per item, USD
+
+// Bounded-concurrency worker pool for the bulk MOQ run. Pulls items off a
+// shared queue and runs `process(item)` with at most `concurrency` in flight.
+// `process` is expected to be self-contained (it does its own try/catch and
+// state updates — see runBulkMoq), so a run never rejects on a single item.
+// Encapsulating the pool here makes the concurrency mechanics independently
+// testable: feed it N items + a mock process and assert the peak in-flight
+// count never exceeds the cap and every item is processed.
+class MoqQueue {
+  constructor(concurrency) { this.concurrency = Math.max(1, concurrency | 0); }
+  async run(items, process) {
+    const queue = items.slice();
+    let inFlight = 0, peak = 0, processed = 0;
+    const worker = async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        if (item === undefined) break;
+        inFlight++; if (inFlight > peak) peak = inFlight;
+        try { await process(item); processed++; }
+        finally { inFlight--; }
+      }
+    };
+    const n = Math.min(this.concurrency, queue.length);
+    await Promise.all(Array.from({ length: n }, () => worker()));
+    return { processed, peakConcurrency: peak };
+  }
+}
+
+let bulkMoq = {
+  status: 'idle',  // idle | running | done
+  results: new Map(),  // toolkit_item_id -> {py, ai, chosen, source, original_site_moq, analysis, error}
+  scopeKey: null,
+  completed: 0,
+  total: 0,
+  errors: 0,
+};
+
+let currentFilteredCache = [];  // set every applyFilters() so we don't refilter for the bulk run
+
+function getCurrentFiltered() { return currentFilteredCache; }
+
+function snapshotScopeKey() {
+  return JSON.stringify({
+    season: document.getElementById('fSeason').value,
+    brand: document.getElementById('fBrand').value,
+    program: document.getElementById('fProgram').value,
+    vendor: document.getElementById('fVendor').value,
+    category: activeCategory,
+    search: document.getElementById('fSearch').value,
+  });
+}
+
+function updateBulkRunButton() {
+  const btn = document.getElementById('btnBulkRun');
+  const lbl = document.getElementById('btnBulkRunLabel');
+  const status = document.getElementById('moqStatus');
+  if (!btn || !lbl || !status) return;
+  const n = currentFilteredCache.length;
+  const total = allItems.length;
+
+  // If analysis is running or done, leave the button alone (clear button takes over)
+  if (bulkMoq.status === 'running') {
+    btn.disabled = true;
+    lbl.textContent = `Analyzing ${bulkMoq.completed}/${bulkMoq.total}…`;
+    return;
+  }
+  if (bulkMoq.status === 'done') {
+    btn.disabled = false;
+    lbl.textContent = `Re-run on ${n} items`;
+    return;
+  }
+
+  // Stale-scope detection: filters changed since the analysis ran
+  if (bulkMoq.results.size > 0 && bulkMoq.scopeKey !== snapshotScopeKey()) {
+    status.innerHTML = '<span class="ab-warning">⚠ Filters changed since last analysis — results below may be partial. Clear or re-run.</span>';
+    return;
+  }
+
+  if (n === 0) {
+    btn.disabled = true;
+    lbl.textContent = 'Run MOQ Analysis';
+    status.textContent = 'Empty filter — narrow down to enable bulk analysis.';
+  } else if (n > MOQ_BULK_CAP) {
+    btn.disabled = true;
+    lbl.textContent = `Run MOQ on ${n} items`;
+    status.innerHTML = `<span class="ab-warning">${n.toLocaleString()} items exceeds the ${MOQ_BULK_CAP}-item cap. Narrow filters to ${MOQ_BULK_CAP} or fewer.</span>`;
+  } else if (n === total && total > MOQ_BULK_CAP) {
+    btn.disabled = true;
+    lbl.textContent = `Run MOQ on ${n} items`;
+    status.innerHTML = `Narrow with Season-Buy / Brand first — running on all <strong>${n}</strong> items would exceed the cap.`;
+  } else {
+    btn.disabled = false;
+    const cached = currentFilteredCache.filter(it => it.moq_recommendation).length;
+    const fresh = n - cached;
+    lbl.textContent = fresh === 0 ? `View ${n} cached` : `Run MOQ on ${n} items`;
+    if (cached === 0) {
+      status.innerHTML = `Filter scoped to <strong>${n}</strong> items — ready to analyze.`;
+    } else if (fresh === 0) {
+      status.innerHTML = `All <strong>${n}</strong> items have a cached analysis — view instantly, no Claude spend.`;
+    } else {
+      status.innerHTML = `<strong>${n}</strong> items · <strong>${cached}</strong> cached, <strong>${fresh}</strong> need fresh analysis.`;
+    }
+  }
+}
+
+function openBulkConfirm() {
+  const n = currentFilteredCache.length;
+  if (n === 0 || n > MOQ_BULK_CAP) return;
+  // Estimates count only items that actually need a fresh Claude call.
+  // Cached items return instantly with zero spend.
+  const cached = currentFilteredCache.filter(it => it.moq_recommendation).length;
+  const fresh = n - cached;
+  if (fresh === 0) {
+    // Pure cache view — no API calls, skip the confirm modal.
+    runBulkMoq();
+    return;
+  }
+  document.getElementById('bcItems').textContent = `${n.toLocaleString()}${cached > 0 ? ` (${cached} cached)` : ''}`;
+  const minutes = Math.max(0.5, Math.ceil((fresh / MOQ_CONCURRENCY) * MOQ_SECONDS_PER_ITEM / 60 * 10) / 10);
+  document.getElementById('bcTime').textContent = minutes.toFixed(1).replace(/\.0$/, '');
+  document.getElementById('bcCost').textContent = '$' + (fresh * MOQ_COST_PER_ITEM).toFixed(2);
+  document.getElementById('bulkConfirmBack').classList.add('open');
+}
+function closeBulkConfirm() {
+  document.getElementById('bulkConfirmBack').classList.remove('open');
+}
+
+async function runBulkMoq() {
+  closeBulkConfirm();
+  const filtered = [...currentFilteredCache];
+  if (filtered.length === 0 || filtered.length > MOQ_BULK_CAP) return;
+
+  // Get session token
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session?.access_token) {
+    showToast('Sign-in expired', 'error');
+    return;
+  }
+  const token = session.access_token;
+
+  bulkMoq = {
+    status: 'running',
+    results: new Map(),
+    scopeKey: snapshotScopeKey(),
+    completed: 0,
+    total: filtered.length,
+    errors: 0,
+  };
+
+  // Seed result map with placeholders so the table renders pending rows.
+  // If an item already has a saved analysis, populate from cache immediately
+  // — zero API call needed.
+  let cacheHits = 0;
+  filtered.forEach(it => {
+    const cached = it.moq_recommendation;
+    if (cached && cached.statistical) {
+      const py = _toNum(cached.statistical?.adjusted_recommendation);
+      const ai = (cached.ai && !cached.ai._error) ? _toNum(cached.ai.ai_recommended_moq) : null;
+      const chosen = ai != null ? ai : py;
+      const source = ai != null ? 'ai' : (py != null ? 'py' : null);
+      bulkMoq.results.set(it.toolkit_item_id, {
+        py, ai, chosen, source,
+        original_site_moq: _toNum(it.site_moq),
+        analysis: { ...cached, cached: true, computed_at: it.moq_recommended_at },
+        pending: false,
+        cached: true,
+      });
+      bulkMoq.completed++;
+      cacheHits++;
+    } else {
+      bulkMoq.results.set(it.toolkit_item_id, {
+        py: null, ai: null, chosen: null, source: null,
+        original_site_moq: _toNum(it.site_moq),
+        pending: true,
+      });
+    }
+  });
+  if (cacheHits > 0) {
+    showToast(`${cacheHits} of ${filtered.length} from cache · ${filtered.length - cacheHits} need analysis`);
+  }
+
+  document.getElementById('btnBulkClear').style.display = 'inline-flex';
+  document.getElementById('moqProgress').style.display = 'block';
+  updateBulkProgress();
+  updateBulkRunButton();
+  applyFilters();  // re-render with new columns
+
+  // Concurrent worker queue
+  // Only API-call items that don't have a cached analysis. The cached
+  // ones already populated their results in the seed loop above.
+  const queue = filtered.filter(it => !it.moq_recommendation);
+  // Re-render once so cached items show their tiles immediately
+  renderTable(currentFilteredCache);
+  updateBulkProgress();
+
+  // Per-item work: fetch a recommendation, fold it into bulkMoq.results, and
+  // re-render. Self-contained error handling so one failure never halts the
+  // pool (MoqQueue relies on this — process() must not reject).
+  const processItem = async (item) => {
+    try {
+      const resp = await fetch('/api/moq-recommend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+        body: JSON.stringify({ toolkit_item_id: item.toolkit_item_id }),
+      });
+      if (!resp.ok) {
+        let msg = 'HTTP ' + resp.status;
+        try { const j = await resp.json(); if (j?.error) msg = j.error; } catch(_) {}
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      const py = _toNum(data.statistical?.adjusted_recommendation);
+      const ai = (data.ai && !data.ai._error) ? _toNum(data.ai.ai_recommended_moq) : null;
+      const chosen = ai != null ? ai : py;
+      const source = ai != null ? 'ai' : (py != null ? 'py' : null);
+      bulkMoq.results.set(item.toolkit_item_id, {
+        py, ai, chosen, source,
+        original_site_moq: _toNum(item.site_moq),
+        analysis: data,
+        pending: false,
+      });
+      // Mirror the freshly-saved analysis onto allItems so future opens /
+      // bulk runs hit the in-memory cache without an extra DB fetch.
+      if (!data.cached) {
+        const stored = { ...data };
+        delete stored.cached;
+        delete stored.computed_at;
+        item.moq_recommendation = stored;
+        item.moq_recommended_at = new Date().toISOString();
+      }
+    } catch (e) {
+      bulkMoq.errors++;
+      bulkMoq.results.set(item.toolkit_item_id, {
+        py: null, ai: null, chosen: null, source: null,
+        original_site_moq: _toNum(item.site_moq),
+        error: e.message || String(e),
+        pending: false,
+      });
+    }
+    bulkMoq.completed++;
+    updateBulkProgress();
+    updateBulkRunButton();
+    // Re-render row in place
+    renderTable(currentFilteredCache);
+  };
+
+  // If everything was cached, the queue is empty and no workers run.
+  if (queue.length > 0) {
+    await new MoqQueue(MOQ_CONCURRENCY).run(queue, processItem);
+  }
+
+  bulkMoq.status = 'done';
+  updateBulkProgress(true);
+  updateBulkRunButton();
+  renderTable(currentFilteredCache);
+  updateSaveBar();
+  const ok = bulkMoq.completed - bulkMoq.errors;
+  showToast(`MOQ analysis complete · ${ok}/${bulkMoq.completed} succeeded${bulkMoq.errors ? ', ' + bulkMoq.errors + ' failed' : ''}`);
+}
+
+function updateBulkProgress(forceDone) {
+  const fill = document.getElementById('moqProgressFill');
+  if (!fill) return;
+  const pct = bulkMoq.total > 0 ? Math.round((bulkMoq.completed / bulkMoq.total) * 100) : 0;
+  fill.style.width = pct + '%';
+  if (forceDone || pct === 100) fill.classList.add('done'); else fill.classList.remove('done');
+}
+
+function chooseMoq(itemId, source) {
+  const r = bulkMoq.results.get(itemId);
+  if (!r) return;
+  const val = source === 'py' ? r.py : r.ai;
+  if (val == null) return;
+  r.chosen = val;
+  r.source = source;
+  // Re-render — simplest correct path
+  renderTable(currentFilteredCache);
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  let dirty = 0;
+  bulkMoq.results.forEach(r => {
+    if (r.chosen != null && r.chosen !== r.original_site_moq) dirty++;
+  });
+  const btn = document.getElementById('btnBulkSave');
+  if (!btn) return;
+  if (dirty > 0) {
+    btn.style.display = 'inline-flex';
+    btn.textContent = `Save ${dirty} change${dirty === 1 ? '' : 's'}`;
+    btn.disabled = false;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+async function saveBulkMoq() {
+  const updates = [];
+  bulkMoq.results.forEach((r, itemId) => {
+    if (r.chosen != null && r.chosen !== r.original_site_moq) {
+      updates.push({ id: itemId, site_moq: r.chosen });
+    }
+  });
+  if (updates.length === 0) return;
+
+  const btn = document.getElementById('btnBulkSave');
+  btn.disabled = true;
+  btn.textContent = `Saving ${updates.length}…`;
+
+  let saved = 0, errs = 0;
+  for (const u of updates) {
+    try {
+      const { error } = await sb.from('toolkit_items').update({ site_moq: u.site_moq }).eq('id', u.id);
+      if (error) throw error;
+      saved++;
+      const r = bulkMoq.results.get(u.id);
+      if (r) r.original_site_moq = u.site_moq;
+      const item = allItems.find(it => it.toolkit_item_id === u.id);
+      if (item) item.site_moq = u.site_moq;
+    } catch (e) {
+      console.error('Save failed for', u.id, e);
+      errs++;
+    }
+  }
+  updateSaveBar();
+  renderTable(currentFilteredCache);
+  if (errs === 0) {
+    showToast(`Saved ${saved} MOQ update${saved === 1 ? '' : 's'}`);
+  } else {
+    showToast(`Saved ${saved}, ${errs} failed`, 'error');
+  }
+}
+
+function clearBulkMoq() {
+  // Confirm if there are unsaved dirty rows
+  let dirty = 0;
+  bulkMoq.results.forEach(r => {
+    if (r.chosen != null && r.chosen !== r.original_site_moq) dirty++;
+  });
+  if (dirty > 0 && !confirm(`${dirty} unsaved MOQ change${dirty === 1 ? '' : 's'} will be discarded. Clear anyway?`)) return;
+
+  bulkMoq = { status: 'idle', results: new Map(), scopeKey: null, completed: 0, total: 0, errors: 0 };
+  document.getElementById('btnBulkClear').style.display = 'none';
+  document.getElementById('btnBulkSave').style.display = 'none';
+  document.getElementById('moqProgress').style.display = 'none';
+  document.getElementById('moqProgressFill').style.width = '0%';
+  document.getElementById('moqProgressFill').classList.remove('done');
+  updateBulkRunButton();
+  renderTable(currentFilteredCache);
+}
+
+// Per-item analysis popover
+function openMoqPopover(itemId) {
+  const r = bulkMoq.results.get(itemId);
+  if (!r || !r.analysis) return;
+  const item = allItems.find(it => it.toolkit_item_id === itemId);
+  const data = r.analysis;
+  const stat = data.statistical || {};
+  const ai = data.ai || {};
+  const src = data.source_item || {};
+
+  const stats = `
+    <div class="moq-popover-stats">
+      <span>Records <strong>${stat.data_points ?? 0}</strong></span>
+      <span>Median <strong>${fmtNum(stat.median)}</strong></span>
+      <span>Mean <strong>${fmtNum(stat.mean)}</strong></span>
+      <span>CV <strong>${stat.cv != null ? stat.cv.toFixed(2) : '—'}</strong></span>
+      <span>Cancel <strong>${stat.cancellation_rate_avg != null ? Math.round(stat.cancellation_rate_avg * 100) + '%' : '—'}</strong></span>
+      <span>Trend <strong>${stat.trend_direction || '—'}</strong></span>
+      <span>Confidence <strong>${stat.confidence_score || '—'}</strong></span>
+    </div>
+  `;
+  const adjReason = (ai.adjustment_reason || '').trim();
+  const risks = (ai.risk_factors || []).filter(Boolean);
+
+  document.getElementById('moqPopover').innerHTML = `
+    <div class="moq-popover-head">
+      <div>
+        <div class="ttl">${escapeHtml(item?.item_description || src.item_description || '—')}</div>
+        <div class="sub">${escapeHtml(src.brand_name || '—')} · ${escapeHtml(src.category || '—')} · ${escapeHtml(src.item_type || '—')} · ${escapeHtml(src.pre_buy_program || '—')}</div>
+      </div>
+      <button class="moq-popover-close" onclick="closeMoqPopover()">&times;</button>
+    </div>
+    <div class="moq-popover-section">
+      <div class="ttl">Statistical</div>
+      ${stats}
+    </div>
+    ${adjReason ? `
+      <div class="moq-popover-section">
+        <div class="ttl">Adjustment reason</div>
+        <div class="moq-popover-adj">${escapeHtml(adjReason)}</div>
+      </div>
+    ` : ''}
+    <div class="moq-popover-section">
+      <div class="ttl">AI rationale</div>
+      <div class="moq-popover-rationale">${escapeHtml(ai.rationale || '—')}</div>
+    </div>
+    ${risks.length ? `
+      <div class="moq-popover-section">
+        <div class="ttl">Risk factors</div>
+        <div class="moq-popover-risks">${risks.map(rf => `<span class="moq-popover-risk">${escapeHtml(rf)}</span>`).join('')}</div>
+      </div>
+    ` : ''}
+    ${ai.negotiation_note ? `
+      <div class="moq-popover-section">
+        <div class="ttl">Negotiation note</div>
+        <div class="moq-popover-neg">💬 ${escapeHtml(ai.negotiation_note)}</div>
+      </div>
+    ` : ''}
+  `;
+  document.getElementById('moqPopoverBack').classList.add('open');
+}
+
+function closeMoqPopover() {
+  document.getElementById('moqPopoverBack').classList.remove('open');
+}
+
+function _toNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Warn on page leave if unsaved MOQ changes exist
+window.addEventListener('beforeunload', e => {
+  let dirty = 0;
+  bulkMoq.results.forEach(r => {
+    if (r.chosen != null && r.chosen !== r.original_site_moq) dirty++;
+  });
+  if (dirty > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// ============================================================
+// MOQ RECOMMENDATION (per-item drawer panel)
+// ============================================================
+async function loadMoqRecommendation(itemId, force) {
+  const body = document.getElementById('moqBody');
+  if (!body) return;
+  body.innerHTML = `<div class="moq-loading">${force ? 'Re-running analysis' : 'Analyzing historical records'}</div>`;
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) {
+      body.innerHTML = '<div class="moq-banner error">Sign-in expired. Please refresh and sign in again.</div>';
+      return;
+    }
+
+    const resp = await fetch('/api/moq-recommend', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({ toolkit_item_id: itemId, force: !!force }),
+    });
+
+    if (!resp.ok) {
+      let msg = 'Request failed (' + resp.status + ')';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch(_) {}
+      body.innerHTML = `<div class="moq-banner error">${escapeHtml(msg)}</div>
+        <button class="btn-moq" style="margin-top:10px" onclick="loadMoqRecommendation('${itemId}', true)">Try again</button>`;
+      return;
+    }
+
+    const data = await resp.json();
+    body.innerHTML = renderMoq(data, itemId);
+
+    // Mirror the freshly-saved analysis back into allItems so subsequent drawer
+    // opens for this item find it cached without an extra fetch.
+    if (!data.cached) {
+      const item = allItems.find(it => it.toolkit_item_id === itemId);
+      if (item) {
+        item.moq_recommendation = { ...data };
+        delete item.moq_recommendation.cached;
+        delete item.moq_recommendation.computed_at;
+        item.moq_recommended_at = new Date().toISOString();
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    body.innerHTML = `<div class="moq-banner error">Unexpected error: ${escapeHtml(e.message || String(e))}</div>
+      <button class="btn-moq" style="margin-top:10px" onclick="loadMoqRecommendation('${itemId}', true)">Try again</button>`;
+  }
+}
+
+// Render a cached analysis into the drawer's MOQ panel immediately,
+// without an API round-trip. Used when openDrawer finds a stored
+// moq_recommendation on the item.
+function renderCachedMoq(payload, itemId, computedAt) {
+  const body = document.getElementById('moqBody');
+  if (!body) return;
+  const enriched = { ...payload, cached: true, computed_at: computedAt };
+  body.innerHTML = renderMoq(enriched, itemId);
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'just now';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'recently';
+  const sec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.floor(day / 30);
+  return `${mo}mo ago`;
+}
+
+function renderMoq(data, itemId) {
+  const src = data.source_item || {};
+  const stat = data.statistical || {};
+  const ai = data.ai || null;
+  const recs = data.matched_records || [];
+
+  // Header strip: scope + total matched
+  const scopeBits = [
+    src.brand_name ? `<span>Brand <strong>${escapeHtml(src.brand_name)}</strong></span>` : '',
+    src.category ? `<span>Category <strong>${escapeHtml(src.category)}</strong></span>` : '',
+    src.item_type ? `<span>Type <strong>${escapeHtml(src.item_type)}</strong></span>` : '',
+    src.wave ? `<span>Wave <strong>${escapeHtml(src.wave)}${src.season_hint ? ' · ' + escapeHtml(src.season_hint) : ''}</strong></span>` : '',
+    `<span>Matched <strong>${data.total_matched ?? 0}</strong></span>`,
+  ].filter(Boolean).join('');
+
+  // Empty-data state
+  if (stat.no_data) {
+    return `
+      ${data.cached ? `<div class="moq-banner empty" style="background:var(--blue-tint);color:var(--blue-deep);border-left-color:var(--blue)">✓ Cached analysis · saved ${escapeHtml(timeAgo(data.computed_at))}</div>` : ''}
+      <div class="moq-meta-row" style="margin-bottom:10px">${scopeBits}</div>
+      <div class="moq-banner empty">
+        No historical records match this combination. Try broadening the match — for example, an earlier season or a sibling item type.
+      </div>
+      <button class="btn-moq" style="margin-top:10px" onclick="loadMoqRecommendation('${itemId}', true)">Run again</button>
+    `;
+  }
+
+  // Stat card
+  const confClass = stat.confidence_score || 'none';
+  const trend = stat.trend_direction || 'flat';
+  const trendArrow = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
+  const adjusted = stat.adjusted_recommendation;
+  const aiNum = ai && !ai._error ? ai.ai_recommended_moq : null;
+
+  // Consensus
+  let consensusHtml = '';
+  if (aiNum != null && adjusted != null) {
+    if (aiNum === adjusted) {
+      consensusHtml = `<div class="moq-consensus-bar match">✓ Consensus · both methods agree</div>`;
+    } else {
+      const delta = aiNum - adjusted;
+      const sign = delta > 0 ? '+' : '';
+      consensusHtml = `<div class="moq-consensus-bar diverge">⚠ Review · methods diverge by <strong style="margin:0 4px">${sign}${delta.toLocaleString()}</strong> units</div>`;
+    }
+  }
+
+  const flagBanners = (stat.flags || []).map(f =>
+    `<div class="moq-banner warn">${escapeHtml(f)}</div>`
+  ).join('');
+
+  // Mini table — top 5 records inside the stat card
+  const top5 = recs.slice(0, 5);
+  const miniRows = top5.length ? `
+    <div class="moq-mini-table">
+      <table>
+        <thead><tr><th>Program</th><th class="num">Ordered</th><th class="num">Final</th></tr></thead>
+        <tbody>
+          ${top5.map(r => `<tr>
+            <td>${escapeHtml(r.pre_buy_program || r.program_name || '—')}</td>
+            <td class="num">${fmtNum(r.original_qty ?? r.qty_for_stats)}</td>
+            <td class="num">${fmtNum(r.final_production_qty)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  const statCard = `
+    <div class="moq-card stat">
+      <div class="moq-card-head">
+        <span class="moq-card-eyebrow">Statistical</span>
+        <span class="moq-conf ${confClass}"><span class="dot"></span>${confClass} conf</span>
+      </div>
+      <div>
+        <div class="moq-number">${fmtNum(adjusted)}</div>
+        <div class="moq-number-sub">median adjusted for cancellation · ${stat.data_points} record${stat.data_points === 1 ? '' : 's'}</div>
+      </div>
+      <div class="moq-meta-row">
+        <span>Mean <strong>${fmtNum(stat.mean)}</strong></span>
+        <span>Median <strong>${fmtNum(stat.median)}</strong></span>
+        <span>CV <strong>${stat.cv != null ? stat.cv.toFixed(2) : '—'}</strong></span>
+        <span>Cancel <strong>${stat.cancellation_rate_avg != null ? Math.round(stat.cancellation_rate_avg * 100) + '%' : '—'}</strong></span>
+        <span class="moq-trend ${trend}">${trendArrow} ${trend}</span>
+      </div>
+      ${miniRows}
+    </div>
+  `;
+
+  // AI card
+  let aiCard;
+  if (!ai) {
+    aiCard = `<div class="moq-card ai"><div class="moq-card-eyebrow">AI judgment</div><div class="moq-banner empty">Statistical-only run · AI layer skipped.</div></div>`;
+  } else if (ai._error) {
+    aiCard = `<div class="moq-card ai"><div class="moq-card-eyebrow">AI judgment</div><div class="moq-banner error">${escapeHtml(ai._error)}</div></div>`;
+  } else {
+    const delta = adjusted != null ? aiNum - adjusted : null;
+    const deltaHtml = (delta != null && delta !== 0)
+      ? `<span class="moq-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : ''}${delta.toLocaleString()} vs statistical</span>`
+      : '';
+    const adjReason = (ai.adjustment_reason || '').trim();
+    const adjReasonHtml = adjReason ? `<div class="moq-adj-reason">${escapeHtml(adjReason)}</div>` : '';
+    const risks = (ai.risk_factors || []).filter(Boolean);
+    const risksHtml = risks.length
+      ? `<div class="moq-risks">${risks.map(r => `<span class="moq-risk">${escapeHtml(r)}</span>`).join('')}</div>`
+      : '';
+    aiCard = `
+      <div class="moq-card ai">
+        <div class="moq-card-head">
+          <span class="moq-card-eyebrow">AI judgment</span>
+          ${deltaHtml}
+        </div>
+        <div>
+          <div class="moq-number">${fmtNum(aiNum)}</div>
+          <div class="moq-number-sub">claude-sonnet · judgment layer</div>
+        </div>
+        ${adjReasonHtml}
+        <div class="moq-rationale">${escapeHtml(ai.rationale || '')}</div>
+        ${risksHtml}
+        ${ai.negotiation_note ? `<div class="moq-neg-note">💬 ${escapeHtml(ai.negotiation_note)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  // Full records table (expandable)
+  const fullTable = recs.length ? `
+    <button class="moq-records-toggle" onclick="toggleMoqRecords(this)">▾ Show all ${data.total_matched} matched records</button>
+    <div class="moq-records-full">
+      <table>
+        <thead><tr>
+          <th>Buy</th><th>Item</th><th>Program</th><th class="num">Site MOQ</th><th class="num">Original</th><th class="num">Final</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          ${recs.map(r => `<tr>
+            <td>${escapeHtml(r.pre_buy_program || '—')}</td>
+            <td>${escapeHtml(r.item_description || '—')}</td>
+            <td>${escapeHtml(r.program_name || '—')}</td>
+            <td class="num">${fmtNum(r.site_moq)}</td>
+            <td class="num">${fmtNum(r.original_qty)}</td>
+            <td class="num">${fmtNum(r.final_production_qty)}</td>
+            <td>${escapeHtml(r.final_status || '—')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  // Cached header: surfaces when this analysis was previously saved and
+  // is being served from Supabase (zero Claude spend on this load).
+  const cachedHeader = data.cached ? `
+    <div class="moq-banner empty" style="background:var(--blue-tint);color:var(--blue-deep);border-left-color:var(--blue);align-items:center;justify-content:space-between;flex-direction:row">
+      <span>✓ Cached analysis · saved <strong>${escapeHtml(timeAgo(data.computed_at))}</strong></span>
+      <button class="btn-moq" style="background:transparent;border:1px solid var(--blue);color:var(--blue-deep);padding:6px 12px;font-size:11px" onclick="loadMoqRecommendation('${itemId}', true)">↻ Re-run (fresh Claude call)</button>
+    </div>
+  ` : '';
+
+  return `
+    <div class="moq-result">
+      ${cachedHeader}
+      <div class="moq-meta-row" style="margin-bottom:10px">${scopeBits}</div>
+      ${flagBanners}
+      <div class="moq-cards">
+        ${statCard}
+        ${aiCard}
+      </div>
+      ${consensusHtml}
+      ${fullTable}
+      ${data.cached ? '' : `<div style="margin-top:10px;text-align:right">
+        <button class="btn-moq" style="background:transparent;border:1px solid var(--orange);color:var(--orange-deep)" onclick="loadMoqRecommendation('${itemId}', true)">↻ Re-run analysis</button>
+      </div>`}
+    </div>
+  `;
+}
+
+function toggleMoqRecords(btn) {
+  const panel = btn.nextElementSibling;
+  if (!panel) return;
+  panel.classList.toggle('open');
+  btn.textContent = panel.classList.contains('open')
+    ? btn.textContent.replace('▾', '▴').replace('Show all', 'Hide')
+    : btn.textContent.replace('▴', '▾').replace('Hide', 'Show all');
+}
+
+function fmtNum(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  const x = Number(n);
+  if (!Number.isFinite(x)) return '—';
+  return Math.abs(x) >= 1 ? Math.round(x).toLocaleString() : x.toString();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function showToast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

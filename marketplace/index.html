@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marketplace — Overclock</title>
+
+<!-- Pre-render auth peek: if a Supabase token already exists, skip the gate flash. -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   MARKETPLACE — requester surface (Phase 1 demand → Phase 2 confirm).
+   Own light surface on the shared tokens, sibling of the shop's look.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root{
+  --mkt-line:#e4e8ef; --mkt-ink-soft:#4c545e; --mkt-paper:#f7f8fb;
+  --display:'Sora',sans-serif; --body:'Hanken Grotesk',sans-serif; --mono:'DM Mono',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--mkt-paper);color:var(--ink);font-family:var(--body)}
+
+/* gate */
+#gate{position:fixed;inset:0;background:linear-gradient(160deg,#0a0d14 0%,#11151f 60%,#16278F 160%);display:flex;align-items:center;justify-content:center;z-index:50}
+html.has-token #gate{display:none}
+.gate-box{width:min(400px,92vw);background:#fff;border-radius:16px;padding:34px 32px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.gate-logo{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.5px}
+.gate-logo em{font-style:normal;color:var(--blue)}
+.gate-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--orange-deep);margin:4px 0 16px}
+.gate-title{font-family:var(--display);font-size:21px;font-weight:700;margin:0 0 4px}
+.gate-sub{font-size:13.5px;color:var(--mkt-ink-soft);margin:0 0 18px;line-height:1.5}
+.gate-field{margin-bottom:12px}
+.gate-field label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:5px}
+.gate-input{width:100%;border:1.5px solid var(--mkt-line);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px}
+.gate-input:focus{outline:none;border-color:var(--blue)}
+.gate-input.error{border-color:#C0392B;animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.gate-btn{width:100%;margin-top:6px;background:var(--blue);color:#fff;border:0;border-radius:9px;padding:12px;font-family:var(--display);font-weight:600;font-size:14.5px;cursor:pointer}
+.gate-btn:hover{background:var(--blue-deep)}
+.gate-btn:disabled{opacity:.6;cursor:default}
+.gate-error{color:#C0392B;font-size:13px;min-height:18px;margin-top:10px}
+.gate-toggle{font-size:13px;color:var(--mkt-ink-soft);margin-top:14px;text-align:center}
+.gate-toggle a{color:var(--blue);cursor:pointer;font-weight:600}
+#gate.mode-register .login-only{display:none}
+#gate:not(.mode-register) .reg-only{display:none}
+
+/* app frame */
+#app{display:none;min-height:100vh}
+html.has-token #app{display:block}
+.mkt-header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:20px;height:60px;padding:0 26px;background:#fff;border-bottom:1px solid var(--mkt-line)}
+.mkt-brand{font-family:var(--display);font-weight:800;font-size:16.5px;white-space:nowrap}
+.mkt-brand em{font-style:normal;color:var(--blue)}
+.mkt-brand .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:2px;color:var(--orange-deep);margin-left:8px;vertical-align:2px}
+.mkt-nav{display:flex;gap:4px}
+.mkt-nav button{border:0;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--gray-mid);padding:8px 12px;border-radius:8px;cursor:pointer}
+.mkt-nav button:hover{background:var(--off-white)}
+.mkt-nav button.active{color:var(--blue);background:var(--blue-soft)}
+.header-spacer{flex:1}
+.header-user{font-family:var(--mono);font-size:11.5px;color:var(--gray-soft)}
+.link-btn{border:0;background:none;font-family:var(--mono);font-size:11.5px;color:var(--gray-mid);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+.wrap{max-width:1100px;margin:0 auto;padding:30px 26px 80px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:2.2px;text-transform:uppercase;color:var(--orange-deep);margin-bottom:6px}
+h1.page-title{font-family:var(--display);font-weight:800;font-size:clamp(22px,3.4vw,30px);margin:0 0 6px}
+.page-sub{font-size:14px;color:var(--mkt-ink-soft);margin:0 0 26px;line-height:1.55;max-width:640px}
+
+/* program cards (dashboard) */
+.prog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.prog-card{background:#fff;border:1px solid var(--mkt-line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.prog-card h3{font-family:var(--display);font-size:16.5px;font-weight:700;margin:0}
+.prog-card p{font-size:13px;color:var(--mkt-ink-soft);margin:0;line-height:1.5}
+.phase-chip{align-self:flex-start;font-family:var(--mono);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;padding:4px 10px;border-radius:999px}
+.phase-demand_open{background:var(--blue-soft);color:var(--blue-deep)}
+.phase-confirm_open{background:var(--orange-soft);color:var(--orange-deep)}
+.phase-review,.phase-closed,.phase-draft{background:var(--off-white);color:var(--gray-mid)}
+.flag{font-size:12.5px;font-weight:600}
+.flag.warn{color:var(--orange-deep)}
+.flag.ok{color:var(--green)}
+.deadline{font-family:var(--mono);font-size:11px;color:var(--gray-soft)}
+.prog-cta{margin-top:auto;background:var(--blue);color:#fff;border:0;border-radius:9px;padding:11px;font-family:var(--display);font-weight:600;font-size:13.5px;cursor:pointer}
+.prog-cta:hover{background:var(--blue-deep)}
+.prog-cta.secondary{background:var(--off-white);color:var(--ink)}
+
+/* item grid (Phase 1) */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{background:#fff;border:1px solid var(--mkt-line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.card-img{height:120px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:34px}
+.card-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px;flex:1}
+.card-cat{font-family:var(--mono);font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--gray-soft)}
+.card-name{font-family:var(--display);font-weight:600;font-size:14px;line-height:1.35}
+.card-meta{font-family:var(--mono);font-size:11px;color:var(--gray-soft)}
+.card-qty{font-family:var(--mono);font-size:11.5px;color:var(--blue-deep);font-weight:500}
+.card-btn{margin-top:auto;border:1.5px solid var(--blue);background:none;color:var(--blue);border-radius:8px;padding:9px;font-family:var(--display);font-weight:600;font-size:12.5px;cursor:pointer}
+.card-btn:hover{background:var(--blue-soft)}
+.card-btn.has{background:var(--blue);color:#fff}
+
+/* allocation drawer */
+.overlay{position:fixed;inset:0;background:rgba(10,13,20,.45);opacity:0;pointer-events:none;transition:opacity .22s;z-index:30}
+.overlay.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:-460px;width:min(440px,94vw);height:100vh;background:#fff;z-index:31;transition:right .26s;display:flex;flex-direction:column;box-shadow:-18px 0 50px rgba(0,0,0,.18)}
+.drawer.show{right:0}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--mkt-line)}
+.drawer-head h2{font-family:var(--display);font-size:16.5px;font-weight:700;margin:0}
+.drawer-head .x{border:0;background:none;font-size:22px;cursor:pointer;color:var(--gray-mid)}
+.drawer-body{flex:1;overflow-y:auto;padding:18px 22px}
+.drawer-foot{padding:16px 22px;border-top:1px solid var(--mkt-line)}
+.alloc-row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.alloc-row select{flex:1;border:1.5px solid var(--mkt-line);border-radius:8px;padding:9px 10px;font:inherit;font-size:13px}
+.alloc-row input{width:84px;border:1.5px solid var(--mkt-line);border-radius:8px;padding:9px 10px;font-family:var(--mono);font-size:13px;text-align:right}
+.alloc-row .rm{border:0;background:none;color:#C0392B;font-size:17px;cursor:pointer}
+.add-row-btn{border:1.5px dashed var(--mkt-line);background:none;width:100%;border-radius:8px;padding:9px;font:inherit;font-size:12.5px;color:var(--gray-mid);cursor:pointer;margin-top:2px}
+.add-row-btn:hover{border-color:var(--blue);color:var(--blue)}
+.min-hint{font-family:var(--mono);font-size:11px;color:var(--orange-deep);margin:6px 0 0}
+.primary-btn{width:100%;background:var(--blue);color:#fff;border:0;border-radius:9px;padding:12px;font-family:var(--display);font-weight:600;font-size:14px;cursor:pointer}
+.primary-btn:hover{background:var(--blue-deep)}
+.primary-btn:disabled{opacity:.55;cursor:default}
+.primary-btn.orange{background:var(--orange)}
+.primary-btn.orange:hover{background:var(--orange-deep)}
+
+/* summary / confirm tables */
+.tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--mkt-line);border-radius:12px;overflow:hidden}
+.tbl th{font-family:var(--mono);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gray-soft);text-align:left;padding:11px 14px;border-bottom:1px solid var(--mkt-line);background:var(--mkt-paper)}
+.tbl td{padding:11px 14px;font-size:13.5px;border-bottom:1px solid var(--mkt-line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .num{font-family:var(--mono);text-align:right}
+.tbl input.qty{width:80px;border:1.5px solid var(--mkt-line);border-radius:7px;padding:7px 9px;font-family:var(--mono);font-size:13px;text-align:right}
+.tbl select.addr{max-width:190px;border:1.5px solid var(--mkt-line);border-radius:7px;padding:7px 9px;font:inherit;font-size:12.5px}
+.tbl .rm-line{border:0;background:none;color:#C0392B;cursor:pointer;font-size:15px}
+.tbl-wrap{overflow-x:auto}
+.total-bar{display:flex;justify-content:flex-end;align-items:center;gap:20px;padding:16px 4px}
+.total-bar .lbl{font-family:var(--mono);font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gray-soft)}
+.total-bar .amt{font-family:var(--display);font-weight:800;font-size:22px}
+
+.section-title{font-family:var(--display);font-weight:700;font-size:16px;margin:30px 0 12px}
+.back-btn{border:0;background:none;font-family:var(--mono);font-size:11.5px;color:var(--gray-mid);cursor:pointer;padding:0;margin-bottom:16px;text-decoration:underline;text-underline-offset:3px}
+.empty{background:#fff;border:1px dashed var(--mkt-line);border-radius:12px;padding:34px;text-align:center;color:var(--gray-soft);font-size:13.5px}
+
+/* addresses */
+.addr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.addr-card{background:#fff;border:1px solid var(--mkt-line);border-radius:12px;padding:16px}
+.addr-card h4{font-family:var(--display);font-size:14px;margin:0 0 6px}
+.addr-card p{font-size:12.5px;color:var(--mkt-ink-soft);margin:0;line-height:1.5}
+.addr-card .row-actions{margin-top:10px;display:flex;gap:12px}
+.addr-card .row-actions a{font-family:var(--mono);font-size:11px;color:var(--blue);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-grid .full{grid-column:1/-1}
+.form-grid label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:4px}
+.form-grid input{width:100%;border:1.5px solid var(--mkt-line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13.5px}
+
+/* receipt */
+.confirm-wrap{text-align:center;padding:44px 22px}
+.confirm-check{width:64px;height:64px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;color:#fff;font-size:34px}
+.confirm-wrap h2{font-family:var(--display);font-weight:700;font-size:22px;margin:0 0 6px}
+.confirm-wrap p{font-size:13.5px;color:var(--mkt-ink-soft);line-height:1.6}
+
+/* invoice modal (print view) */
+.modal-bg{position:fixed;inset:0;background:rgba(10,13,20,.5);display:none;align-items:center;justify-content:center;z-index:40}
+.modal-bg.show{display:flex}
+.invoice-sheet{background:#fff;width:min(640px,94vw);max-height:90vh;overflow-y:auto;border-radius:12px;padding:36px 40px}
+.invoice-sheet h2{font-family:var(--display);margin:0}
+.inv-meta{font-family:var(--mono);font-size:12px;color:var(--gray-mid);margin:8px 0 22px;line-height:1.8}
+.inv-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.inv-actions button{border:1.5px solid var(--mkt-line);background:none;border-radius:8px;padding:9px 16px;font:inherit;font-size:13px;cursor:pointer}
+.inv-actions .p{background:var(--blue);border-color:var(--blue);color:#fff}
+@media print{ body>*{display:none!important} .modal-bg.show{display:block!important;position:static;background:none} .invoice-sheet{box-shadow:none;width:100%;max-height:none} .inv-actions{display:none!important} }
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);background:var(--ink);color:#fff;font-family:var(--mono);font-size:11px;letter-spacing:.6px;padding:12px 20px;border-radius:9px;opacity:0;pointer-events:none;transition:all .22s;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media(max-width:600px){ .mkt-header{gap:10px;padding:0 14px} .header-user{display:none} .wrap{padding:22px 16px 60px} .form-grid{grid-template-columns:1fr} .form-grid .full{grid-column:1} }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ GATE ══════════════ -->
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-logo">OVER<em>CLOCK</em></div>
+    <div class="gate-eyebrow">Marketing Ops Marketplace</div>
+    <h1 class="gate-title login-only">Welcome back</h1>
+    <h1 class="gate-title reg-only">Create your account</h1>
+    <p class="gate-sub login-only">Sign in to submit demand for open programs and confirm your orders.</p>
+    <p class="gate-sub reg-only">Register with your corporate email. An admin will assign your cost center.</p>
+    <div class="gate-field reg-only">
+      <label>Full name</label>
+      <input class="gate-input" id="regName" type="text" placeholder="Jane Field" autocomplete="name">
+    </div>
+    <div class="gate-field">
+      <label>Email</label>
+      <input class="gate-input" id="email" type="email" placeholder="you@company.com" autocomplete="email">
+    </div>
+    <div class="gate-field">
+      <label>Password</label>
+      <input class="gate-input" id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="gate-btn login-only" id="loginBtn" onclick="signIn()">Sign In</button>
+    <button class="gate-btn reg-only" id="registerBtn" onclick="signUp()">Create Account</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-toggle login-only">New here? <a onclick="setMode('register')">Create an account</a></div>
+    <div class="gate-toggle reg-only">Already have an account? <a onclick="setMode('login')">Sign in</a></div>
+  </div>
+</div>
+
+<!-- ══════════════ APP ══════════════ -->
+<div id="app">
+  <header class="mkt-header">
+    <div class="mkt-brand">OVER<em>CLOCK</em><span class="tag">MARKETPLACE</span></div>
+    <nav class="mkt-nav">
+      <button id="nav_home" class="active" onclick="go('home')">Programs</button>
+      <button id="nav_orders" onclick="go('orders')">My Orders</button>
+      <button id="nav_addresses" onclick="go('addresses')">Addresses</button>
+    </nav>
+    <div class="header-spacer"></div>
+    <span class="header-user" id="headerUser"></span>
+    <button class="link-btn" onclick="signOut()">Sign out</button>
+  </header>
+  <div class="wrap" id="view"></div>
+</div>
+
+<!-- allocation drawer -->
+<div class="overlay" id="allocOverlay" onclick="closeAlloc()"></div>
+<aside class="drawer" id="allocDrawer" aria-label="Allocate quantities">
+  <div class="drawer-head"><h2 id="allocTitle">Allocate</h2><button class="x" onclick="closeAlloc()">×</button></div>
+  <div class="drawer-body" id="allocBody"></div>
+  <div class="drawer-foot" id="allocFoot"></div>
+</aside>
+
+<!-- invoice print modal -->
+<div class="modal-bg" id="invModal"><div class="invoice-sheet" id="invSheet"></div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG + CLIENT
+// ============================================================
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:monospace;color:#C0392B;">Missing config — copy config.example.js → config.local.js</div>';
+  throw new Error('APP_CONFIG missing');
+}
+const sb = supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+
+let me = null;            // auth user
+let member = null;        // mkt_members row
+let programs = [];        // visible programs
+let addresses = [];       // my active addresses
+let curProgram = null;    // program being viewed
+let progItems = [];       // [{item_id,min_qty,max_qty, item:{...v_mkt_items}}]
+let myLines = [];         // my demand lines for curProgram
+let allocItem = null;     // item in the allocation drawer
+
+const CAT_STYLE = {
+  paper:{grad:'linear-gradient(135deg,#1E3FD6,#4E6BFF)',glyph:'▨'},
+  display:{grad:'linear-gradient(135deg,#C75200,#FF9440)',glyph:'◫'},
+  premium:{grad:'linear-gradient(135deg,#16278F,#7A5CFF)',glyph:'❖'},
+  _d:{grad:'linear-gradient(135deg,#3A4954,#5b6572)',glyph:'●'}
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => n == null ? '—' : '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const toast = m => { const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null;
+const daysLeft = d => d ? Math.ceil((new Date(d) - Date.now())/86400000) : null;
+
+// ============================================================
+// AUTH (shop-pattern gate)
+// ============================================================
+function setMode(mode){ document.getElementById('gate').classList.toggle('mode-register', mode==='register'); gateErr(''); }
+function gateErr(m){ document.getElementById('gateError').textContent = m; }
+
+async function signIn(){
+  const email=document.getElementById('email').value.trim(), password=document.getElementById('password').value;
+  if(!email||!password){ gateErr('Email and password required'); return; }
+  const b=document.getElementById('loginBtn'); b.disabled=true; b.textContent='Signing in…'; gateErr('');
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  b.disabled=false; b.textContent='Sign In';
+  if(error){ gateErr(error.message.includes('Invalid')?'Wrong email or password':error.message); return; }
+  await enterApp(data.session);
+}
+async function signUp(){
+  const email=document.getElementById('email').value.trim(), password=document.getElementById('password').value;
+  const full_name=document.getElementById('regName').value.trim();
+  if(!email||!password){ gateErr('Email and password required'); return; }
+  if(password.length<6){ gateErr('Password must be at least 6 characters'); return; }
+  const b=document.getElementById('registerBtn'); b.disabled=true; b.textContent='Creating…'; gateErr('');
+  const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name } } });
+  b.disabled=false; b.textContent='Create Account';
+  if(error){ gateErr(error.message); return; }
+  if(data.session) await enterApp(data.session);
+  else { setMode('login'); gateErr('Account created. Please confirm via email, then sign in.'); }
+}
+async function signOut(){
+  await sb.auth.signOut(); me=null; member=null;
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('app').style.display='none';
+  document.getElementById('gate').style.display='flex';
+}
+async function enterApp(session){
+  me = session.user;
+  document.documentElement.classList.add('has-token');
+  document.getElementById('gate').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('headerUser').textContent = me.email || '';
+  // member row: read; self-register as requester if missing
+  let { data } = await sb.from('mkt_members').select('*').eq('id', me.id).maybeSingle();
+  if(!data){
+    const md = me.user_metadata || {};
+    const ins = await sb.from('mkt_members').insert({ id: me.id, email: me.email, name: md.full_name || null, role:'requester' }).select().single();
+    data = ins.data;
+  }
+  member = data;
+  await go('home');
+}
+window.addEventListener('load', async () => {
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session) await enterApp(session);
+  else { document.documentElement.classList.remove('has-token'); document.getElementById('email').focus(); }
+});
+
+// ============================================================
+// ROUTER
+// ============================================================
+async function go(view, arg){
+  ['home','orders','addresses'].forEach(v => document.getElementById('nav_'+v)?.classList.toggle('active', v===view));
+  const el = document.getElementById('view');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  if(view==='home')       await renderHome(el);
+  if(view==='program')    await renderProgram(el, arg);
+  if(view==='orders')     await renderOrders(el);
+  if(view==='addresses')  await renderAddresses(el);
+  window.scrollTo(0,0);
+}
+
+// ============================================================
+// DASHBOARD — programs by phase + pending-action flags
+// ============================================================
+async function renderHome(el){
+  const [progRes, lineRes, orderRes] = await Promise.all([
+    sb.from('mkt_programs').select('*').in('phase',['demand_open','confirm_open']).order('demand_deadline',{ascending:true}),
+    sb.from('mkt_demand_lines').select('program_id,status').eq('user_id', me.id),
+    sb.from('mkt_orders').select('program_id,status').eq('user_id', me.id)
+  ]);
+  programs = progRes.data || [];
+  const lineByProg = {}, orderByProg = {};
+  (lineRes.data||[]).forEach(l => { if(l.status!=='removed') lineByProg[l.program_id]=(lineByProg[l.program_id]||0)+1; });
+  (orderRes.data||[]).forEach(o => orderByProg[o.program_id]=o);
+
+  let html = `<div class="eyebrow">Requester Dashboard</div>
+    <h1 class="page-title">Open programs</h1>
+    <p class="page-sub">Submit demand while a program's window is open, then return to confirm your order once pricing is visible.</p>`;
+  if(!programs.length){
+    html += '<div class="empty">No programs are open right now. You\'ll get an email when a new window opens.</div>';
+    el.innerHTML = html; return;
+  }
+  html += '<div class="prog-grid">' + programs.map(p => {
+    const lines = lineByProg[p.id]||0, order = orderByProg[p.id];
+    let flag='', cta='', dl='';
+    if(p.phase==='demand_open'){
+      const d = daysLeft(p.demand_deadline);
+      dl = p.demand_deadline ? `Demand closes ${fmtDate(p.demand_deadline)}${d!=null?` · ${d} day${d===1?'':'s'} left`:''}` : '';
+      flag = lines ? `<span class="flag ok">✓ ${lines} line${lines===1?'':'s'} submitted</span>`
+                   : `<span class="flag warn">Nothing submitted yet</span>`;
+      cta = `<button class="prog-cta" onclick="go('program','${p.id}')">${lines?'Edit demand':'Browse & submit demand'}</button>`;
+    } else {
+      const d = daysLeft(p.confirm_deadline);
+      dl = p.confirm_deadline ? `Confirmation closes ${fmtDate(p.confirm_deadline)}${d!=null?` · ${d} day${d===1?'':'s'} left`:''}` : '';
+      if(order){ flag = `<span class="flag ok">✓ Order confirmed</span>`; cta = `<button class="prog-cta secondary" onclick="go('orders')">View order</button>`; }
+      else if(lines){ flag = `<span class="flag warn">Confirmation required</span>`; cta = `<button class="prog-cta" style="background:var(--orange)" onclick="go('program','${p.id}')">Review prices & confirm</button>`; }
+      else { flag = `<span class="flag">No Phase 1 demand</span>`; cta = ''; }
+    }
+    return `<div class="prog-card">
+      <span class="phase-chip phase-${p.phase}">${p.phase==='demand_open'?'Phase 1 · Demand open':'Phase 2 · Confirm open'}</span>
+      <h3>${esc(p.name)}</h3>
+      <p>${esc(p.description||'')}</p>
+      ${dl?`<span class="deadline">${dl}</span>`:''}
+      ${flag}${cta}
+    </div>`;
+  }).join('') + '</div>';
+  el.innerHTML = html;
+}
+
+// ============================================================
+// PROGRAM VIEW — Phase 1 (demand) or Phase 2 (confirm)
+// ============================================================
+async function loadProgramData(programId){
+  const [pRes, piRes, lRes, aRes] = await Promise.all([
+    sb.from('mkt_programs').select('*').eq('id', programId).single(),
+    sb.from('mkt_program_items').select('*').eq('program_id', programId),
+    sb.from('mkt_demand_lines').select('*').eq('program_id', programId).eq('user_id', me.id).neq('status','removed'),
+    sb.from('mkt_addresses').select('*').eq('user_id', me.id).eq('active', true).order('created_at')
+  ]);
+  curProgram = pRes.data; myLines = lRes.data || []; addresses = aRes.data || [];
+  const pis = piRes.data || [];
+  const ids = pis.map(x=>x.item_id);
+  const items = ids.length ? (await sb.from('v_mkt_items').select('*').in('item_id', ids)).data || [] : [];
+  // fetch categories for placeholder tiles
+  const cats = ids.length ? (await sb.from('toolkit_items').select('id,category').in('id', ids)).data || [] : [];
+  const catById = Object.fromEntries(cats.map(c=>[c.id,c.category]));
+  progItems = pis.map(pi => ({ ...pi, item: items.find(i=>i.item_id===pi.item_id), category: catById[pi.item_id] })).filter(x=>x.item);
+}
+
+async function renderProgram(el, programId){
+  await loadProgramData(programId);
+  if(!curProgram){ el.innerHTML = '<div class="empty">Program not found or no longer open.</div>'; return; }
+  if(curProgram.phase === 'demand_open') renderDemand(el);
+  else if(curProgram.phase === 'confirm_open') renderConfirm(el);
+  else el.innerHTML = '<div class="empty">This program is not currently open. Check back later.</div>';
+}
+
+// ---------- Phase 1: browse + allocate (prices hidden by default) ----------
+function renderDemand(el){
+  const showPrices = !curProgram.prices_hidden_phase1;
+  const d = daysLeft(curProgram.demand_deadline);
+  const qtyByItem = {};
+  myLines.forEach(l => qtyByItem[l.item_id] = (qtyByItem[l.item_id]||0) + l.qty_phase1);
+
+  let html = `<button class="back-btn" onclick="go('home')">← All programs</button>
+    <div class="eyebrow">Phase 1 · Demand Collection</div>
+    <h1 class="page-title">${esc(curProgram.name)}</h1>
+    <p class="page-sub">${esc(curProgram.description||'')}
+      ${curProgram.demand_deadline?`<br><span class="deadline">Demand closes ${fmtDate(curProgram.demand_deadline)}${d!=null?` · ${d} day${d===1?'':'s'} left`:''}</span>`:''}
+      ${showPrices?'':'<br><span class="deadline">Prices are revealed at confirmation — submit the quantities you need.</span>'}</p>`;
+
+  html += '<div class="grid">' + progItems.map(x => {
+    const cs = CAT_STYLE[x.category] || CAT_STYLE._d;
+    const mine = qtyByItem[x.item_id];
+    return `<div class="card">
+      <div class="card-img" style="background:${x.item.image_url?`url('${esc(x.item.image_url)}') center/cover`:cs.grad}">${x.item.image_url?'':cs.glyph}</div>
+      <div class="card-body">
+        <span class="card-cat">${esc(x.category||'item')} · ${esc(x.item.sku||'')}</span>
+        <span class="card-name">${esc(x.item.name)}</span>
+        ${showPrices?`<span class="card-meta">${money(x.item.unit_price)} / unit</span>`:''}
+        ${x.min_qty?`<span class="card-meta">Min ${x.min_qty}${x.max_qty?` · Max ${x.max_qty}`:''}</span>`:(x.max_qty?`<span class="card-meta">Max ${x.max_qty}</span>`:'')}
+        ${mine?`<span class="card-qty">✓ ${mine} allocated</span>`:''}
+        <button class="card-btn ${mine?'has':''}" onclick="openAlloc('${x.item_id}')">${mine?'Edit allocation':'Add & allocate'}</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+
+  // my summary
+  if(myLines.length){
+    html += `<h2 class="section-title">Your submitted demand</h2><div class="tbl-wrap"><table class="tbl">
+      <tr><th>Item</th><th>Ship to</th><th class="num">Qty</th></tr>` +
+      myLines.map(l => {
+        const pi = progItems.find(x=>x.item_id===l.item_id);
+        const a = addresses.find(a=>a.id===l.address_id);
+        return `<tr><td>${esc(pi?.item?.name||'?')}</td><td>${esc(a? (a.label||a.city) : '—')}</td><td class="num">${l.qty_phase1}</td></tr>`;
+      }).join('') + '</table></div>';
+  }
+  el.innerHTML = html;
+}
+
+// allocation drawer: one row per (address, qty)
+function openAlloc(itemId){
+  allocItem = progItems.find(x=>x.item_id===itemId);
+  if(!allocItem) return;
+  if(!addresses.length){
+    toast('Add a shipping address first'); go('addresses'); return;
+  }
+  document.getElementById('allocTitle').textContent = allocItem.item.name;
+  const mine = myLines.filter(l=>l.item_id===itemId);
+  const rows = mine.length ? mine.map(l=>({address_id:l.address_id, qty:l.qty_phase1}))
+                           : [{address_id: addresses[0].id, qty: allocItem.min_qty || 1}];
+  renderAllocRows(rows);
+  document.getElementById('allocOverlay').classList.add('show');
+  document.getElementById('allocDrawer').classList.add('show');
+}
+function renderAllocRows(rows){
+  const body = document.getElementById('allocBody');
+  body.innerHTML = `<p style="font-size:12.5px;color:var(--mkt-ink-soft);margin:0 0 14px">Split the quantity across one or more of your saved ship-to addresses.</p>` +
+    rows.map((r,i)=>`<div class="alloc-row" data-i="${i}">
+      <select onchange="this.closest('.alloc-row').dataset.addr=this.value">${addresses.map(a=>`<option value="${a.id}" ${a.id===r.address_id?'selected':''}>${esc(a.label||a.city)}</option>`).join('')}</select>
+      <input type="number" min="0" value="${r.qty}" />
+      <button class="rm" title="Remove" onclick="this.closest('.alloc-row').remove()">×</button>
+    </div>`).join('') +
+    `<button class="add-row-btn" onclick="addAllocRow()">+ Add another address</button>` +
+    (allocItem.min_qty?`<p class="min-hint">Minimum total: ${allocItem.min_qty}${allocItem.max_qty?` · Maximum: ${allocItem.max_qty}`:''}</p>`:(allocItem.max_qty?`<p class="min-hint">Maximum total: ${allocItem.max_qty}</p>`:''));
+  document.getElementById('allocFoot').innerHTML = `<button class="primary-btn" onclick="saveAlloc()">Save allocation</button>`;
+}
+function addAllocRow(){
+  const rows = readAllocRows();
+  rows.push({address_id: addresses[0].id, qty: 0});
+  renderAllocRows(rows);
+}
+function readAllocRows(){
+  return [...document.querySelectorAll('#allocBody .alloc-row')].map(div=>({
+    address_id: div.querySelector('select').value,
+    qty: parseInt(div.querySelector('input').value||'0',10) || 0
+  }));
+}
+function closeAlloc(){
+  document.getElementById('allocOverlay').classList.remove('show');
+  document.getElementById('allocDrawer').classList.remove('show');
+  allocItem = null;
+}
+async function saveAlloc(){
+  const rows = readAllocRows().filter(r=>r.qty>0);
+  const total = rows.reduce((s,r)=>s+r.qty,0);
+  if(allocItem.min_qty && total>0 && total<allocItem.min_qty){ toast(`Minimum total is ${allocItem.min_qty}`); return; }
+  if(allocItem.max_qty && total>allocItem.max_qty){ toast(`Maximum total is ${allocItem.max_qty}`); return; }
+  // merge rows on same address
+  const merged = {};
+  rows.forEach(r=>merged[r.address_id]=(merged[r.address_id]||0)+r.qty);
+  // replace my lines for this item: delete then insert
+  const del = await sb.from('mkt_demand_lines').delete().eq('program_id',curProgram.id).eq('user_id',me.id).eq('item_id',allocItem.item_id);
+  if(del.error){ toast('Save failed: '+del.error.message); return; }
+  const payload = Object.entries(merged).map(([address_id,qty])=>({
+    program_id: curProgram.id, user_id: me.id, item_id: allocItem.item_id,
+    address_id, qty_phase1: qty, status:'submitted'
+  }));
+  if(payload.length){
+    const ins = await sb.from('mkt_demand_lines').insert(payload);
+    if(ins.error){ toast('Save failed: '+ins.error.message); return; }
+  }
+  closeAlloc();
+  toast(payload.length ? 'Demand saved' : 'Allocation cleared');
+  await renderProgram(document.getElementById('view'), curProgram.id);
+}
+
+// ---------- Phase 2: confirm with prices ----------
+function renderConfirm(el){
+  const d = daysLeft(curProgram.confirm_deadline);
+  let html = `<button class="back-btn" onclick="go('home')">← All programs</button>
+    <div class="eyebrow" style="color:var(--orange-deep)">Phase 2 · Confirmation</div>
+    <h1 class="page-title">${esc(curProgram.name)}</h1>
+    <p class="page-sub">Prices are now visible. Adjust quantities, change or split ship-to addresses, remove lines — then confirm to place your order.
+      ${curProgram.confirm_deadline?`<br><span class="deadline">Confirmation closes ${fmtDate(curProgram.confirm_deadline)}${d!=null?` · ${d} day${d===1?'':'s'} left`:''}</span>`:''}</p>`;
+
+  if(!myLines.length){
+    html += '<div class="empty">You have no Phase 1 demand in this program. New items can\'t be added during confirmation.</div>';
+    el.innerHTML = html; return;
+  }
+  const alreadyConfirmed = myLines.every(l=>l.status==='confirmed');
+  html += `<div class="tbl-wrap"><table class="tbl" id="confirmTbl">
+    <tr><th>Item</th><th>Ship to</th><th class="num">Phase 1</th><th class="num">Final qty</th><th class="num">Unit price</th><th class="num">Line total</th><th></th></tr>` +
+    myLines.map(l => {
+      const pi = progItems.find(x=>x.item_id===l.item_id);
+      const qf = l.qty_final ?? l.qty_phase1;
+      return `<tr data-line="${l.id}" data-item="${l.item_id}">
+        <td>${esc(pi?.item?.name||'?')}</td>
+        <td><select class="addr" ${alreadyConfirmed?'disabled':''} onchange="updLine('${l.id}',{address_id:this.value})">${addresses.map(a=>`<option value="${a.id}" ${a.id===l.address_id?'selected':''}>${esc(a.label||a.city)}</option>`).join('')}</select></td>
+        <td class="num">${l.qty_phase1}</td>
+        <td class="num"><input class="qty" type="number" min="0" value="${qf}" ${alreadyConfirmed?'disabled':''} onchange="updLine('${l.id}',{qty_final:parseInt(this.value||'0',10)||0})"></td>
+        <td class="num">${money(l.unit_price_snapshot)}</td>
+        <td class="num lineTotal">${money(qf * (l.unit_price_snapshot||0))}</td>
+        <td>${alreadyConfirmed?'':`<button class="rm-line" title="Remove line" onclick="removeLine('${l.id}')">×</button>`}</td>
+      </tr>`;
+    }).join('') + '</table></div>';
+
+  const total = myLines.reduce((s,l)=>s + (l.status==='removed'?0:(l.qty_final ?? l.qty_phase1) * (l.unit_price_snapshot||0)), 0);
+  html += `<div class="total-bar"><span class="lbl">Order total</span><span class="amt" id="orderTotal">${money(total)}</span></div>`;
+  html += alreadyConfirmed
+    ? `<div class="confirm-wrap"><div class="confirm-check">✓</div><h2>Order confirmed</h2><p>Your order is locked in. You'll receive a chargeback invoice after the program closes and shipping is recorded.</p></div>`
+    : `<div style="display:flex;gap:12px;justify-content:flex-end">
+         <button class="primary-btn orange" style="max-width:280px" onclick="doConfirm()">Confirm order</button>
+       </div>
+       <p style="text-align:right;font-size:12px;color:var(--gray-soft);margin-top:8px">Confirming locks your lines and creates the order. Splitting a line? Save an extra address first, then change a line's ship-to.</p>`;
+  el.innerHTML = html;
+}
+async function updLine(lineId, patch){
+  const { error } = await sb.from('mkt_demand_lines').update(patch).eq('id', lineId);
+  if(error){ toast('Update failed: '+error.message); return; }
+  const l = myLines.find(x=>x.id===lineId); Object.assign(l, patch);
+  // refresh totals in place
+  const tr = document.querySelector(`tr[data-line="${lineId}"]`);
+  if(tr){ const qf = l.qty_final ?? l.qty_phase1; tr.querySelector('.lineTotal').textContent = money(qf*(l.unit_price_snapshot||0)); }
+  const total = myLines.reduce((s,x)=>s + (x.status==='removed'?0:(x.qty_final ?? x.qty_phase1)*(x.unit_price_snapshot||0)),0);
+  const el = document.getElementById('orderTotal'); if(el) el.textContent = money(total);
+}
+async function removeLine(lineId){
+  const { error } = await sb.from('mkt_demand_lines').update({status:'removed', qty_final:0}).eq('id', lineId);
+  if(error){ toast('Remove failed: '+error.message); return; }
+  myLines = myLines.filter(l=>l.id!==lineId);
+  renderConfirm(document.getElementById('view'));
+}
+async function doConfirm(){
+  const { data, error } = await sb.rpc('mkt_confirm_order', { p_program: curProgram.id });
+  if(error){ toast(error.message); return; }
+  toast('Order confirmed');
+  await renderProgram(document.getElementById('view'), curProgram.id);
+}
+
+// ============================================================
+// ORDERS + INVOICES
+// ============================================================
+async function renderOrders(el){
+  const [oRes, iRes, pRes] = await Promise.all([
+    sb.from('mkt_orders').select('*').eq('user_id', me.id).order('created_at',{ascending:false}),
+    sb.from('mkt_invoices').select('*'),
+    sb.from('mkt_programs').select('id,name')
+  ]);
+  const orders = oRes.data||[], invoices = iRes.data||[], progName = Object.fromEntries((pRes.data||[]).map(p=>[p.id,p.name]));
+  let html = `<div class="eyebrow">History</div><h1 class="page-title">My orders & invoices</h1>`;
+  if(!orders.length){ el.innerHTML = html + '<div class="empty">No confirmed orders yet.</div>'; return; }
+  html += `<div class="tbl-wrap"><table class="tbl">
+    <tr><th>Program</th><th>Status</th><th class="num">Subtotal</th><th class="num">Shipping</th><th>Invoice</th></tr>` +
+    orders.map(o => {
+      const inv = invoices.find(i=>i.order_id===o.id && i.status==='issued');
+      return `<tr>
+        <td>${esc(progName[o.program_id]||'—')}</td>
+        <td><span class="phase-chip phase-${o.status==='invoiced'?'confirm_open':'demand_open'}">${o.status}</span></td>
+        <td class="num">${money(o.subtotal)}</td>
+        <td class="num">${money(o.shipping_cost)}</td>
+        <td>${inv?`<a style="font-family:var(--mono);font-size:12px;color:var(--blue);cursor:pointer;text-decoration:underline" onclick="showInvoice('${inv.id}')">${esc(inv.invoice_number)}</a>`:'—'}</td>
+      </tr>`;
+    }).join('') + '</table></div>';
+  el.innerHTML = html;
+  window._invoices = invoices; window._orders = orders; window._progName = progName;
+}
+async function showInvoice(invId){
+  const inv = (window._invoices||[]).find(i=>i.id===invId); if(!inv) return;
+  const ord = (window._orders||[]).find(o=>o.id===inv.order_id);
+  const lines = ord ? (await sb.from('mkt_demand_lines').select('*').eq('program_id', ord.program_id).eq('user_id', me.id).eq('status','confirmed')).data||[] : [];
+  const ids = lines.map(l=>l.item_id);
+  const items = ids.length ? (await sb.from('v_mkt_items').select('item_id,name,sku').in('item_id', ids)).data||[] : [];
+  const nameById = Object.fromEntries(items.map(i=>[i.item_id,i]));
+  document.getElementById('invSheet').innerHTML = `
+    <h2>Chargeback Invoice</h2>
+    <div class="inv-meta">
+      ${esc(inv.invoice_number)} · issued ${esc(inv.issued_date)}<br>
+      Program: ${esc(window._progName[ord?.program_id]||'')}<br>
+      Cost center: <b>${esc(inv.cost_center||'—')}</b> · Internal chargeback — no tax
+    </div>
+    <table class="tbl"><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Total</th></tr>
+    ${lines.map(l=>`<tr><td>${esc(nameById[l.item_id]?.name||'?')}</td><td class="num">${l.qty_final}</td><td class="num">${money(l.unit_price_snapshot)}</td><td class="num">${money(l.qty_final*(l.unit_price_snapshot||0))}</td></tr>`).join('')}
+    <tr><td colspan="3" style="text-align:right;font-weight:600">Subtotal</td><td class="num">${money(inv.subtotal)}</td></tr>
+    <tr><td colspan="3" style="text-align:right;font-weight:600">Shipping</td><td class="num">${money(inv.shipping)}</td></tr>
+    <tr><td colspan="3" style="text-align:right;font-weight:700">Total</td><td class="num" style="font-weight:700">${money(inv.total)}</td></tr>
+    </table>
+    <div class="inv-actions">
+      <button onclick="document.getElementById('invModal').classList.remove('show')">Close</button>
+      <button class="p" onclick="window.print()">Print / Save PDF</button>
+    </div>`;
+  document.getElementById('invModal').classList.add('show');
+}
+
+// ============================================================
+// ADDRESS BOOK
+// ============================================================
+async function renderAddresses(el){
+  const { data } = await sb.from('mkt_addresses').select('*').eq('user_id', me.id).eq('active', true).order('created_at');
+  addresses = data||[];
+  let html = `<div class="eyebrow">Ship-to</div><h1 class="page-title">My addresses</h1>
+    <p class="page-sub">Saved locations you can allocate quantities to during demand submission.</p>`;
+  html += '<div class="addr-grid">' + addresses.map(a=>`
+    <div class="addr-card">
+      <h4>${esc(a.label||'Address')}</h4>
+      <p>${esc(a.recipient||'')}<br>${esc(a.street||'')}<br>${esc(a.city||'')}${a.state?', '+esc(a.state):''} ${esc(a.zip||'')}</p>
+      <div class="row-actions"><a onclick="editAddr('${a.id}')">Edit</a><a onclick="delAddr('${a.id}')" style="color:#C0392B">Remove</a></div>
+    </div>`).join('') +
+    `<div class="addr-card" style="display:flex;align-items:center;justify-content:center;border-style:dashed;cursor:pointer" onclick="editAddr('')">
+      <span style="color:var(--blue);font-weight:600;font-size:13.5px">+ Add address</span></div></div>`;
+  html += `<div id="addrFormWrap" style="display:none;margin-top:26px;background:#fff;border:1px solid var(--mkt-line);border-radius:12px;padding:22px">
+    <h2 class="section-title" style="margin-top:0" id="addrFormTitle">Add address</h2>
+    <div class="form-grid">
+      <div><label>Label</label><input id="af_label" placeholder="Dallas Field Office"></div>
+      <div><label>Recipient</label><input id="af_recipient" placeholder="Attention line"></div>
+      <div class="full"><label>Street</label><input id="af_street"></div>
+      <div><label>City</label><input id="af_city"></div>
+      <div><label>State</label><input id="af_state"></div>
+      <div><label>ZIP</label><input id="af_zip"></div>
+      <div><label>Country</label><input id="af_country" value="US"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="primary-btn" style="max-width:200px" onclick="saveAddr()">Save</button>
+      <button class="link-btn" onclick="document.getElementById('addrFormWrap').style.display='none'">Cancel</button>
+    </div></div>`;
+  el.innerHTML = html;
+}
+let editingAddrId = null;
+function editAddr(id){
+  editingAddrId = id || null;
+  const a = addresses.find(x=>x.id===id) || {};
+  document.getElementById('addrFormTitle').textContent = id ? 'Edit address' : 'Add address';
+  ['label','recipient','street','city','state','zip','country'].forEach(f=>{
+    document.getElementById('af_'+f).value = a[f] ?? (f==='country'?'US':'');
+  });
+  document.getElementById('addrFormWrap').style.display='block';
+  document.getElementById('af_label').focus();
+}
+async function saveAddr(){
+  const rec = {};
+  ['label','recipient','street','city','state','zip','country'].forEach(f=>rec[f]=document.getElementById('af_'+f).value.trim()||null);
+  if(!rec.street || !rec.city){ toast('Street and city are required'); return; }
+  let res;
+  if(editingAddrId) res = await sb.from('mkt_addresses').update(rec).eq('id', editingAddrId);
+  else res = await sb.from('mkt_addresses').insert({ ...rec, user_id: me.id });
+  if(res.error){ toast('Save failed: '+res.error.message); return; }
+  toast('Address saved');
+  renderAddresses(document.getElementById('view'));
+}
+async function delAddr(id){
+  const { error } = await sb.from('mkt_addresses').update({active:false}).eq('id', id);
+  if(error){ toast(error.message); return; }
+  toast('Address removed');
+  renderAddresses(document.getElementById('view'));
+}
+</script>
+</body>
+</html>

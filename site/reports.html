@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports — Overclock Hub</title>
+
+<!-- Pre-render auth peek: skip showing gate if a Supabase session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ REPORTS HUB · page-specific ━━━ */
+
+.page-head{padding:34px 48px 22px}
+.page-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:var(--orange-deep);margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.page-eyebrow .chip{width:22px;height:8px}
+.page-title{font-family:var(--display);font-weight:700;font-size:34px;color:var(--ink);letter-spacing:-0.02em;line-height:1.04;margin-bottom:6px}
+.page-title em{color:var(--blue);font-style:normal}
+.page-sub{font-size:13px;color:var(--gray-mid);max-width:760px;line-height:1.55}
+
+/* GROUP HEADERS */
+.group{padding:0 48px 32px}
+.group-head{
+  display:flex;align-items:center;gap:12px;
+  margin:18px 0 14px;
+}
+.group-tag{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--blue-deep);padding:4px 10px;background:var(--blue-soft);border-radius:3px;
+}
+.group-title{font-family:var(--display);font-weight:700;font-size:18px;color:var(--ink);letter-spacing:-0.01em}
+.group-meta{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:0.14em;color:var(--gray-soft);text-transform:uppercase}
+
+/* CARD GRID */
+.rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+
+.rcard{
+  background:#fff;border:1px solid var(--hair);border-radius:6px;
+  box-shadow:var(--elev);overflow:hidden;
+  display:flex;flex-direction:column;
+  text-decoration:none;color:inherit;
+  transition:transform .15s,box-shadow .15s,border-color .15s;
+  position:relative;
+}
+.rcard:hover{transform:translateY(-2px);box-shadow:var(--elev-hi);border-color:rgba(30,63,214,0.25)}
+.rcard.disabled{opacity:0.55;pointer-events:none}
+.rcard::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--blue)}
+.rcard.warm::before{background:var(--orange)}
+.rcard.teal::before{background:var(--teal,#14A8AD)}
+.rcard.muted::before{background:var(--gray-soft)}
+
+.rcard-head{padding:18px 20px 12px}
+.rcard-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--blue-deep);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.rcard.warm .rcard-eyebrow{color:var(--orange-deep)}
+.rcard.teal .rcard-eyebrow{color:#0e6a6e}
+.rcard.muted .rcard-eyebrow{color:var(--gray-mid)}
+.rcard-title{font-family:var(--display);font-size:19px;font-weight:700;color:var(--ink);letter-spacing:-0.01em;margin-bottom:6px}
+.rcard-sub{font-size:12.5px;color:var(--gray-mid);line-height:1.55}
+
+.rcard-body{padding:12px 20px 4px;flex:1;display:flex;flex-direction:column;gap:10px}
+.rcard-meta{display:flex;flex-wrap:wrap;gap:6px}
+.r-pill{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;
+  padding:3px 8px;border-radius:3px;
+  background:var(--off-white);color:var(--gray-mid);border:1px solid var(--line-light);
+}
+.r-pill.blue{background:var(--blue-soft);color:var(--blue-deep);border-color:rgba(30,63,214,0.22)}
+.r-pill.warm{background:var(--orange-soft);color:var(--orange-deep);border-color:rgba(255,122,26,0.28)}
+.r-pill.green{background:rgba(26,122,74,0.10);color:#155a36;border-color:rgba(26,122,74,0.25)}
+.r-pill.teal{background:rgba(20,168,173,0.12);color:#0e6a6e;border-color:rgba(20,168,173,0.30)}
+
+.rcard-content{font-size:11.5px;color:var(--gray-mid);line-height:1.6}
+.rcard-content ul{margin:4px 0 0 18px;padding:0}
+.rcard-content li{margin-bottom:3px}
+
+.rcard-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 20px;margin-top:auto;
+  border-top:1px solid var(--line-light);background:rgba(10,13,20,0.015);
+}
+.rcard-status{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray-mid)}
+.r-dot{width:7px;height:7px;border-radius:50%;background:var(--gray-soft)}
+.r-dot.live{background:#3ae07a;box-shadow:0 0 8px rgba(58,224,122,0.5);animation:rPulse 2.4s ease-in-out infinite}
+.r-dot.planned{background:var(--blue-bright);opacity:0.8}
+.r-dot.paused{background:var(--gray-soft)}
+@keyframes rPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.3)}}
+.rcard-cta{font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--blue-deep);font-weight:600;display:flex;align-items:center;gap:6px}
+.rcard.warm .rcard-cta{color:var(--orange-deep)}
+.rcard.teal .rcard-cta{color:#0e6a6e}
+.rcard-cta .arr{font-family:var(--display);font-weight:700;font-size:14px}
+
+.empty-row{
+  padding:24px;text-align:center;
+  background:#fff;border:1px dashed var(--line-light);border-radius:5px;
+  color:var(--gray-soft);font-size:12.5px;font-style:italic;
+}
+
+@media(max-width:900px){
+  .page-head,.group{padding-left:24px;padding-right:24px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Reports</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool · Live database</div>
+    <div class="gate-input-wrap"><input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()"></div>
+    <div class="gate-input-wrap"><input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"></div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link active" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</nav>
+
+<section class="page-head">
+  <div class="page-eyebrow"><span class="chip warm"></span>Reports Library</div>
+  <h1 class="page-title">Reports &amp; <em>Dashboards</em></h1>
+  <p class="page-sub">Every live report on the platform in one place. Click any card to open the full surface. New reports land here as they're built.</p>
+</section>
+
+<!-- ===== LIVE REPORTS ===== -->
+<section class="group">
+  <div class="group-head">
+    <div class="group-tag">Live</div>
+    <div class="group-title">Operational Dashboards</div>
+    <div class="group-meta" id="liveCount">— reports</div>
+  </div>
+
+  <div class="rgrid" id="liveGrid">
+
+    <a class="rcard" href="prebuy-dashboard.html">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report</div>
+        <div class="rcard-title">Program Dashboard</div>
+        <div class="rcard-sub">Final production qty, final sales price, and final spend across items, brands, and programs.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill blue">Supabase live</span>
+          <span class="r-pill">Module 3 &middot; Execution</span>
+          <span class="r-pill warm">No state data yet</span>
+        </div>
+        <div class="rcard-content">
+          <ul>
+            <li>5 KPI cards &middot; final spend, brands, programs, approved items, final qty</li>
+            <li>Brand chart, category mix, top 10 items, brand &times; program tables</li>
+            <li>Cancellation / released-budget alert</li>
+            <li>Sortable item-level appendix with sale price + spend</li>
+          </ul>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot live"></span>Live</div>
+        <div class="rcard-cta">Open report <span class="arr">→</span></div>
+      </div>
+    </a>
+
+    <a class="rcard teal" href="at-risk-monitor.html">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report &middot; At-Risk &middot; F26 HL</div>
+        <div class="rcard-title">ABC At-Risk Monitor &mdash; F26 Holiday</div>
+        <div class="rcard-sub">Items below MOQ on revised orders. Investment required to close the gap, by division and brand.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill teal">Supabase live</span>
+          <span class="r-pill">Module 3 &middot; Execution</span>
+          <span class="r-pill warm">F26 HL only</span>
+        </div>
+        <div class="rcard-content">
+          <ul>
+            <li>7-tile hero &middot; at-risk count, % at risk, required investment</li>
+            <li>Division budget rollup (PRM / LUX) with budget bars</li>
+            <li>Category summary (Display / Paper / Premium)</li>
+            <li>Brand table + sortable item-level table with risk-only filter</li>
+          </ul>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot live"></span>Live</div>
+        <div class="rcard-cta">Open report <span class="arr">&rarr;</span></div>
+      </div>
+    </a>
+
+    <a class="rcard" href="historical-analytics.html">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report &middot; Closed-Loop</div>
+        <div class="rcard-title">Historical Analytics</div>
+        <div class="rcard-sub">Workflow, ordering, spend, and cancellation patterns across F24 / F25 / F26 programs. The closed-loop feedback layer.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill teal">Supabase live</span>
+          <span class="r-pill">Module 4 &middot; Performance Intel</span>
+          <span class="r-pill">Custom report mode</span>
+        </div>
+        <div class="rcard-content">
+          <ul>
+            <li>Program funnel &middot; cancellation deep-dive &middot; spend over time</li>
+            <li>Brand spend year-over-year &middot; vendor reliability &middot; item mix</li>
+            <li>Filters: fiscal year, brand, category, buy wave</li>
+            <li>Custom Report mode wired to the chat agent</li>
+          </ul>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot live"></span>Live</div>
+        <div class="rcard-cta">Open report <span class="arr">→</span></div>
+      </div>
+    </a>
+
+  </div>
+</section>
+
+<!-- ===== PLANNED REPORTS ===== -->
+<section class="group">
+  <div class="group-head">
+    <div class="group-tag" style="background:var(--orange-soft);color:var(--orange-deep)">Planned</div>
+    <div class="group-title">Coming Next</div>
+    <div class="group-meta">Roadmap</div>
+  </div>
+
+  <div class="rgrid">
+
+    <div class="rcard warm disabled">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report &middot; State Performance</div>
+        <div class="rcard-title">State-Level Dashboard</div>
+        <div class="rcard-sub">Spend, items, and brand mix per state. Pulls from the Sales Order Report once the upload feed lands.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill warm">Blocked on Sales Order Report</span>
+          <span class="r-pill">Map + matrix</span>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot planned"></span>Planned</div>
+        <div class="rcard-cta" style="color:var(--gray-soft)">Not yet available</div>
+      </div>
+    </div>
+
+    <div class="rcard muted disabled">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report &middot; Quote Compare</div>
+        <div class="rcard-title">Vendor Quote Comparison</div>
+        <div class="rcard-sub">Side-by-side MOQ tiers across vendors per item. Data is already in <code>vendor_quotes</code> &mdash; just needs a surface.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill">Drawer in Toolkit Manager</span>
+          <span class="r-pill">Phase D</span>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot planned"></span>Planned</div>
+        <div class="rcard-cta" style="color:var(--gray-soft)">Not yet available</div>
+      </div>
+    </div>
+
+    <div class="rcard muted disabled">
+      <div class="rcard-head">
+        <div class="rcard-eyebrow">Report &middot; Order Timeline</div>
+        <div class="rcard-title">Order History Timeline</div>
+        <div class="rcard-sub">Original &rarr; Revised &rarr; Requote &rarr; Final per item. <code>order_snapshots</code> holds the data; needs a view.</div>
+      </div>
+      <div class="rcard-body">
+        <div class="rcard-meta">
+          <span class="r-pill">Drawer tab</span>
+          <span class="r-pill">Per-item</span>
+        </div>
+      </div>
+      <div class="rcard-foot">
+        <div class="rcard-status"><span class="r-dot planned"></span>Planned</div>
+        <div class="rcard-cta" style="color:var(--gray-soft)">Not yet available</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>Reports Library</em></div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+</div>
+
+<script>
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;"><h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const SUPABASE_URL  = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON = window.APP_CONFIG.SUPABASE_ANON;
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const errorEl = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { errorEl.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  errorEl.textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (error) {
+    document.getElementById('gateInput').classList.add('error');
+    errorEl.textContent = error.message.includes('Invalid') ? 'Wrong email or password' : error.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  const live = document.querySelectorAll('#liveGrid .rcard').length;
+  document.getElementById('liveCount').textContent = `${live} report${live !== 1 ? 's' : ''}`;
+  document.getElementById('dbStatus').textContent = 'Live';
+}
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+</script>
+</body>
+</html>

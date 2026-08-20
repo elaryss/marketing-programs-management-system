@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ABC At-Risk Monitor — F26 Holiday</title>
+
+<!-- Pre-render auth peek: skip showing gate if a Supabase session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<!-- Site chrome (auth gate + nav + footer) uses shared Sora/Hanken Grotesk/DM Mono. -->
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Page body uses ABC-branded DM Serif Display + DM Sans (DM Mono already loaded above). -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+
+<style>
+/* ━━━ ABC AT-RISK MONITOR · page-specific (navy/teal/cream/gold) ━━━ */
+
+:root.abc-page {
+  /* Brand palette — recreated from the source ABC report. Scoped under .abc-page
+     so it doesn't override the shared --blue / --orange / etc. from styles.css
+     that the auth gate + nav + footer depend on. */
+  --navy:#1A2744;
+  --navy-soft:rgba(26,39,68,0.06);
+  --teal:#0D7377;
+  --teal-lt:#14A8AD;
+  --gold:#C8973A;
+  --gold-soft:rgba(200,151,58,0.10);
+  --abc-red:#C0392B;
+  --abc-green:#1A7A4A;
+  --abc-amber:#D4831A;
+  --cream:#F8F5F0;
+  --off-wh:#F0EDE8;
+  --paper:#FFFFFF;
+  --slate:#4A5568;
+  --muted:#6B7280;
+  --border:#DDD8D0;
+  --line-soft:#E8ECF1;
+  --cat-display:#0D7377;
+  --cat-paper:#1A4A8A;
+  --cat-premium:#6C3483;
+  --abc-display:'DM Serif Display',serif;
+  --abc-body:'DM Sans',sans-serif;
+  --abc-mono:'DM Mono','Courier New',Courier,monospace;
+}
+
+body.abc-page {
+  background:var(--cream);
+  color:#1A2744;
+  font-family:var(--abc-body);
+}
+
+/* ───── HERO ───── */
+.abc-hero {
+  position:relative;
+  background:var(--navy);
+  color:#fff;
+  padding:34px 48px 22px;
+  overflow:hidden;
+}
+.abc-hero::after {
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(ellipse at top right, rgba(192,57,43,0.22), transparent 60%);
+  pointer-events:none;
+}
+.abc-hero-inner { position:relative; z-index:1; }
+.abc-hero-source {
+  position:absolute; top:12px; right:48px;
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.18em;
+  color:rgba(255,255,255,0.32); text-transform:uppercase; z-index:2;
+}
+.abc-hero-eyebrow {
+  font-family:var(--abc-mono); font-size:10px; letter-spacing:0.22em;
+  text-transform:uppercase; color:var(--gold); margin-bottom:14px;
+}
+.abc-hero-title {
+  font-family:var(--abc-display); font-weight:400; font-size:36px;
+  color:#fff; letter-spacing:-0.01em; line-height:1.05; margin-bottom:8px;
+}
+.abc-hero-title em { color:var(--gold); font-style:italic; }
+.abc-hero-sub {
+  font-family:var(--abc-body); font-size:12px; font-weight:300;
+  color:rgba(255,255,255,0.55); line-height:1.55; max-width:760px;
+  margin-bottom:24px;
+}
+
+.abc-kpi-row {
+  display:flex; flex-wrap:wrap; gap:32px; align-items:flex-end;
+  padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);
+}
+.abc-kpi {
+  display:flex; flex-direction:column; min-width:88px;
+}
+.abc-kpi-label {
+  font-family:var(--abc-mono); font-size:8px; letter-spacing:0.18em;
+  text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:6px;
+}
+.abc-kpi-value {
+  font-family:var(--abc-display); font-size:26px; color:#fff; line-height:1; font-weight:400;
+}
+.abc-kpi.red .abc-kpi-value { color:#FF7F70; }
+.abc-kpi.gold .abc-kpi-value { color:var(--gold); }
+.abc-kpi-divider {
+  width:1px; align-self:stretch; background:rgba(255,255,255,0.12); margin:0 4px;
+}
+
+.abc-hero-bar { position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--gold); z-index:1; }
+
+/* ───── FILTER RAIL ───── */
+.abc-filters {
+  background:var(--paper); border-bottom:1px solid var(--border);
+  padding:14px 48px; display:flex; flex-wrap:wrap; gap:18px; align-items:center;
+}
+.abc-filter-group { display:flex; align-items:center; gap:8px; }
+.abc-filter-label {
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.16em;
+  text-transform:uppercase; color:var(--muted);
+}
+.abc-pill {
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.12em; text-transform:uppercase;
+  padding:6px 11px; border:1px solid var(--border); border-radius:2px;
+  background:var(--paper); color:var(--slate); cursor:pointer;
+  transition:all .15s;
+}
+.abc-pill:hover { border-color:var(--teal); color:var(--teal); }
+.abc-pill.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+.abc-pill.cat.active { background:var(--teal); border-color:var(--teal); }
+.abc-pill.risk-toggle.active { background:var(--abc-red); border-color:var(--abc-red); }
+.abc-search {
+  font-family:var(--abc-mono); font-size:11px; color:var(--slate);
+  padding:6px 10px; border:1px solid var(--border); border-radius:2px;
+  background:var(--paper); width:180px;
+}
+.abc-search:focus { outline:none; border-color:var(--teal); }
+.abc-brand-select {
+  font-family:var(--abc-mono); font-size:10px; color:var(--slate);
+  padding:6px 10px; border:1px solid var(--border); border-radius:2px;
+  background:var(--paper); min-width:160px;
+}
+.abc-reset {
+  margin-left:auto;
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.16em; text-transform:uppercase;
+  padding:6px 11px; border:1px solid var(--border); border-radius:2px;
+  background:transparent; color:var(--muted); cursor:pointer;
+}
+.abc-reset:hover { color:var(--abc-red); border-color:var(--abc-red); }
+
+/* ───── SECTIONS ───── */
+.abc-section { max-width:1400px; margin:0 auto; padding:32px 48px 0; }
+.abc-section-head { display:flex; align-items:baseline; gap:14px; margin-bottom:18px; }
+.abc-section-eyebrow {
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.22em; text-transform:uppercase;
+  color:var(--teal); padding:3px 9px; background:rgba(13,115,119,0.10); border-radius:2px;
+}
+.abc-section-title {
+  font-family:var(--abc-display); font-size:20px; color:var(--navy);
+  letter-spacing:-0.01em; font-weight:400;
+}
+.abc-section-meta {
+  margin-left:auto;
+  font-family:var(--abc-mono); font-size:10px; letter-spacing:0.14em; text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* ───── DIVISION BUDGET CARDS ───── */
+.abc-div-row { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.abc-div-card {
+  background:var(--paper); border:1px solid var(--border); border-radius:3px;
+  padding:22px 24px; position:relative;
+}
+.abc-div-card::before {
+  content:""; position:absolute; top:0; left:0; right:0; height:3px;
+  background:var(--teal);
+}
+.abc-div-card.lux::before { background:var(--gold); }
+.abc-div-head { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px; }
+.abc-div-name {
+  font-family:var(--abc-mono); font-size:11px; letter-spacing:0.22em;
+  text-transform:uppercase; color:var(--navy);
+}
+.abc-div-name strong { font-weight:600; }
+.abc-div-name em { color:var(--muted); font-style:normal; font-size:9px; margin-left:6px; }
+.abc-div-count { font-family:var(--abc-mono); font-size:10px; color:var(--muted); letter-spacing:0.14em; }
+.abc-div-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px; }
+.abc-div-stat-label {
+  font-family:var(--abc-mono); font-size:8px; letter-spacing:0.16em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:5px;
+}
+.abc-div-stat-value {
+  font-family:var(--abc-display); font-size:22px; color:var(--navy); font-weight:400; line-height:1;
+}
+.abc-div-stat-value.gold { color:var(--gold); }
+.abc-div-stat-value.red { color:var(--abc-red); }
+.abc-div-stat-value.green { color:var(--abc-green); }
+.abc-bar-wrap { background:var(--off-wh); border-radius:2px; height:8px; overflow:hidden; margin-bottom:6px; }
+.abc-bar { height:100%; background:var(--teal); }
+.abc-div-card.lux .abc-bar { background:var(--gold); }
+.abc-bar.over { background:var(--abc-red); }
+.abc-bar-foot {
+  display:flex; justify-content:space-between;
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.10em;
+  text-transform:uppercase; color:var(--muted);
+}
+
+/* ───── CATEGORY SUMMARY CARDS ───── */
+.abc-cat-row { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+.abc-cat-card {
+  background:var(--paper); border:1px solid var(--border); border-radius:3px;
+  padding:20px 22px; border-left:3px solid var(--cat-display);
+}
+.abc-cat-card.paper { border-left-color:var(--cat-paper); }
+.abc-cat-card.premium { border-left-color:var(--cat-premium); }
+.abc-cat-name {
+  font-family:var(--abc-mono); font-size:10px; letter-spacing:0.22em;
+  text-transform:uppercase; color:var(--slate); margin-bottom:12px;
+}
+.abc-cat-stats { display:grid; grid-template-columns:1fr 1fr; gap:14px 18px; margin-bottom:14px; }
+.abc-cat-stat-label {
+  font-family:var(--abc-mono); font-size:8px; letter-spacing:0.16em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:4px;
+}
+.abc-cat-stat-value {
+  font-family:var(--abc-display); font-size:18px; color:var(--navy); font-weight:400; line-height:1;
+}
+.abc-cat-stat-value.red { color:var(--abc-red); }
+.abc-cat-stat-value.gold { color:var(--gold); }
+.abc-cat-bar-wrap { background:var(--off-wh); border-radius:2px; height:6px; overflow:hidden; }
+.abc-cat-bar { height:100%; background:var(--abc-red); }
+
+/* ───── BRAND + ITEMS TABLES ───── */
+.abc-panel {
+  background:var(--paper); border:1px solid var(--border); border-radius:3px;
+  overflow:hidden; margin-top:14px;
+}
+.abc-table { width:100%; border-collapse:collapse; }
+.abc-table th {
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.18em; text-transform:uppercase;
+  text-align:left; padding:11px 14px; color:rgba(255,255,255,0.85);
+  background:var(--navy); border-bottom:2px solid var(--gold); white-space:nowrap;
+}
+.abc-table th.num { text-align:right; }
+.abc-table th.sortable { cursor:pointer; user-select:none; }
+.abc-table th.sortable:hover { color:#fff; }
+.abc-table th.sortable.active { color:var(--gold); }
+.abc-table td {
+  padding:9px 14px; font-family:var(--abc-body); font-size:12px;
+  color:var(--navy); border-bottom:1px solid var(--line-soft); vertical-align:middle;
+}
+.abc-table td.mono { font-family:var(--abc-mono); font-size:11px; }
+.abc-table td.num { text-align:right; font-family:var(--abc-mono); font-size:11px; }
+.abc-table tbody tr:hover { background:rgba(13,115,119,0.04); }
+.abc-table tfoot td {
+  background:var(--navy-soft); font-weight:600;
+  border-top:2px solid var(--navy); border-bottom:none;
+}
+
+.abc-div-badge {
+  display:inline-block; font-family:var(--abc-mono); font-size:8px;
+  letter-spacing:0.18em; text-transform:uppercase; padding:2px 7px; border-radius:2px;
+  background:rgba(13,115,119,0.12); color:var(--teal);
+}
+.abc-div-badge.lux { background:var(--gold-soft); color:#8a6520; }
+
+.abc-cat-tag {
+  display:inline-block; font-family:var(--abc-mono); font-size:8px;
+  letter-spacing:0.14em; text-transform:uppercase; padding:2px 7px; border-radius:2px;
+  background:rgba(13,115,119,0.10); color:var(--cat-display);
+}
+.abc-cat-tag.paper { background:rgba(26,74,138,0.10); color:var(--cat-paper); }
+.abc-cat-tag.premium { background:rgba(108,52,131,0.10); color:var(--cat-premium); }
+
+.abc-status {
+  display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--abc-mono); font-size:9px; letter-spacing:0.14em; text-transform:uppercase;
+}
+.abc-status.risk { color:var(--abc-red); }
+.abc-status.ok { color:var(--abc-green); }
+.abc-status::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+
+.abc-empty {
+  padding:36px; text-align:center; font-family:var(--abc-mono); font-size:11px;
+  letter-spacing:0.12em; text-transform:uppercase; color:var(--muted);
+}
+
+/* Sit the final footer flush against the cream body */
+body.abc-page .foot { background:var(--paper); border-top:1px solid var(--border); }
+
+@media(max-width:1100px){
+  .abc-div-row, .abc-cat-row { grid-template-columns:1fr; }
+  .abc-section { padding-left:24px; padding-right:24px; }
+  .abc-hero, .abc-filters { padding-left:24px; padding-right:24px; }
+}
+</style>
+</head>
+<body class="abc-page">
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">At-Risk Monitor</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool · Live database</div>
+    <div class="gate-input-wrap"><input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()"></div>
+    <div class="gate-input-wrap"><input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"></div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link active" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</nav>
+
+<!-- ===== HERO ===== -->
+<section class="abc-hero">
+  <div class="abc-hero-source">F26 Holiday Toolkit · <span id="heroLive">Live</span></div>
+  <div class="abc-hero-inner">
+    <div class="abc-hero-eyebrow">F26 Holiday · At-Risk Analysis</div>
+    <h1 class="abc-hero-title">At-Risk <em>Monitor</em></h1>
+    <p class="abc-hero-sub">Based on Revised Orders · Items below MOQ — investment required to proceed. Read live from Supabase; refreshes whenever the toolkit is re-imported.</p>
+
+    <div class="abc-kpi-row">
+      <div class="abc-kpi red"><div class="abc-kpi-label">At-Risk Items</div><div class="abc-kpi-value" id="kpiAtRisk">—</div></div>
+      <div class="abc-kpi"><div class="abc-kpi-label">Total Items</div><div class="abc-kpi-value" id="kpiTotal">—</div></div>
+      <div class="abc-kpi red"><div class="abc-kpi-label">% At Risk</div><div class="abc-kpi-value" id="kpiAtRiskPct">—</div></div>
+      <div class="abc-kpi"><div class="abc-kpi-label">Total Ordered Qty</div><div class="abc-kpi-value" id="kpiTotalQty">—</div></div>
+      <div class="abc-kpi gold"><div class="abc-kpi-label">Required Investment</div><div class="abc-kpi-value" id="kpiInvest">—</div></div>
+      <div class="abc-kpi"><div class="abc-kpi-label">Total Order Spend</div><div class="abc-kpi-value" id="kpiSpend">—</div></div>
+      <div class="abc-kpi-divider"></div>
+      <div class="abc-kpi gold"><div class="abc-kpi-label">Spend + Investment</div><div class="abc-kpi-value" id="kpiCombined">—</div></div>
+    </div>
+  </div>
+  <div class="abc-hero-bar"></div>
+</section>
+
+<!-- ===== FILTER RAIL ===== -->
+<div class="abc-filters">
+  <div class="abc-filter-group">
+    <span class="abc-filter-label">Division</span>
+    <button class="abc-pill active" data-div="ALL" onclick="setDivision('ALL')">All</button>
+    <button class="abc-pill" data-div="PRM" onclick="setDivision('PRM')">PRM · Bold</button>
+    <button class="abc-pill" data-div="LUX" onclick="setDivision('LUX')">LUX · Luxury</button>
+  </div>
+  <div class="abc-filter-group">
+    <span class="abc-filter-label">Brand</span>
+    <select id="brandSelect" class="abc-brand-select" onchange="setBrand(this.value)">
+      <option value="">All brands</option>
+    </select>
+  </div>
+  <div class="abc-filter-group">
+    <span class="abc-filter-label">Category</span>
+    <button class="abc-pill cat active" data-cat="Display" onclick="toggleCategory('Display')">Display</button>
+    <button class="abc-pill cat active" data-cat="Paper" onclick="toggleCategory('Paper')">Paper</button>
+    <button class="abc-pill cat active" data-cat="Premium" onclick="toggleCategory('Premium')">Premium</button>
+  </div>
+  <div class="abc-filter-group">
+    <button class="abc-pill risk-toggle" id="riskToggle" onclick="toggleRiskOnly()">Risk Only</button>
+  </div>
+  <button class="abc-reset" onclick="resetFilters()">Reset</button>
+</div>
+
+<!-- ===== DIVISION BUDGET CARDS ===== -->
+<section class="abc-section">
+  <div class="abc-section-head">
+    <span class="abc-section-eyebrow">Section 01</span>
+    <h2 class="abc-section-title">Division Budget</h2>
+    <span class="abc-section-meta">Revised spend vs. budgeted ceiling</span>
+  </div>
+  <div class="abc-div-row" id="divBudgetRow"><!-- div cards inject here --></div>
+</section>
+
+<!-- ===== CATEGORY SUMMARY CARDS ===== -->
+<section class="abc-section">
+  <div class="abc-section-head">
+    <span class="abc-section-eyebrow">Section 02</span>
+    <h2 class="abc-section-title">Category Summary</h2>
+    <span class="abc-section-meta">At-risk count, % at risk, spend &amp; investment</span>
+  </div>
+  <div class="abc-cat-row" id="catSummaryRow"><!-- cat cards inject here --></div>
+</section>
+
+<!-- ===== BRAND SUMMARY TABLE ===== -->
+<section class="abc-section">
+  <div class="abc-section-head">
+    <span class="abc-section-eyebrow">Section 03</span>
+    <h2 class="abc-section-title">By Brand</h2>
+    <span class="abc-section-meta" id="brandMeta">— brands</span>
+  </div>
+  <div class="abc-panel">
+    <table class="abc-table">
+      <thead>
+        <tr>
+          <th>Brand</th><th>Division</th>
+          <th class="num">Items</th><th class="num">At Risk</th><th class="num">Risk %</th>
+          <th class="num">Order Spend</th><th class="num">Req. Investment</th>
+        </tr>
+      </thead>
+      <tbody id="brandTbody"></tbody>
+      <tfoot id="brandTfoot"></tfoot>
+    </table>
+  </div>
+</section>
+
+<!-- ===== ITEM-LEVEL TABLE ===== -->
+<section class="abc-section" style="padding-bottom:48px;">
+  <div class="abc-section-head">
+    <span class="abc-section-eyebrow">Section 04</span>
+    <h2 class="abc-section-title">All Items</h2>
+    <span class="abc-section-meta" id="itemsMeta">— items shown</span>
+    <input class="abc-search" id="itemSearch" type="text" placeholder="Search POS or description…" oninput="setItemSearch(this.value)" style="margin-left:14px;">
+  </div>
+  <div class="abc-panel">
+    <table class="abc-table">
+      <thead>
+        <tr>
+          <th class="sortable" data-sort="brand"        onclick="setSort('brand')">Brand</th>
+          <th class="sortable" data-sort="division"    onclick="setSort('division')">Division</th>
+          <th class="sortable" data-sort="category"    onclick="setSort('category')">Category</th>
+          <th class="sortable" data-sort="pos_number"   onclick="setSort('pos_number')">POS</th>
+          <th class="sortable" data-sort="item_description" onclick="setSort('item_description')">Description</th>
+          <th class="sortable num" data-sort="site_moq"      onclick="setSort('site_moq')">MOQ</th>
+          <th class="sortable num" data-sort="portal_price"  onclick="setSort('portal_price')">Portal Price</th>
+          <th class="sortable num" data-sort="ordered_qty"   onclick="setSort('ordered_qty')">Ordered</th>
+          <th class="sortable num" data-sort="plus_minus_moq" onclick="setSort('plus_minus_moq')">+/− MOQ</th>
+          <th class="sortable num" data-sort="budget_spend"  onclick="setSort('budget_spend')">Order Spend</th>
+          <th class="sortable num" data-sort="investment_in_moq" onclick="setSort('investment_in_moq')">Req. Investment</th>
+          <th class="sortable" data-sort="status"      onclick="setSort('status')">Status</th>
+        </tr>
+      </thead>
+      <tbody id="itemsTbody"></tbody>
+    </table>
+  </div>
+</section>
+
+</div><!-- /appContent -->
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>ABC At-Risk Monitor</em> · F26 Holiday · Live</div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+<script>
+// Scope the page-specific palette to <html>/<body> so the auth gate + nav stay on
+// the shared BOLD palette while the body uses the ABC-themed tokens.
+document.documentElement.classList.add('abc-page');
+
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#F8F5F0;min-height:100vh;"><h2 style="font-family:DM Serif Display,serif;color:#1A2744;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4A5568;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const SUPABASE_URL  = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON = window.APP_CONFIG.SUPABASE_ANON;
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// Hard-coded division budgets — mirrors the source HTML report.
+// TODO: move to a small `pre_buy_division_budgets` table when a 2nd window report ships (F27 SM).
+const BUDGET = { LUX: 265000, PRM: 375000 };
+
+// ─── STATE ───
+let DATA = [];                          // all rows from v_f27_holiday_at_risk
+const state = {
+  activeDivision: 'ALL',                // 'ALL' | 'PRM' | 'LUX'
+  selectedBrand: '',                    // '' = all, or exact brand name
+  activeCategories: new Set(['Display','Paper','Premium']),
+  riskOnly: false,
+  itemSearch: '',
+  sort: { col: 'investment_in_moq', dir: 'desc' },
+};
+
+// ─── HELPERS ───
+const fmtUSD = n => (n == null || isNaN(n)) ? '—' : '$' + Math.round(n).toLocaleString();
+const fmtUSDk = n => (n == null || isNaN(n)) ? '—' : (n >= 1000 ? '$' + Math.round(n/1000).toLocaleString() + 'k' : '$' + Math.round(n).toLocaleString());
+const fmtNum = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+const fmtPct = n => (n == null || isNaN(n)) ? '—' : n.toFixed(1) + '%';
+const fmtPrice = n => (n == null || isNaN(n)) ? '—' : '$' + Number(n).toFixed(2);
+const isRisk = r => r.status && r.status.toLowerCase().includes('risk');
+const sum = (arr, key) => arr.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+
+// ─── AUTH ───
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const errorEl = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { errorEl.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  errorEl.textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (error) {
+    document.getElementById('gateInput').classList.add('error');
+    errorEl.textContent = error.message.includes('Invalid') ? 'Wrong email or password' : error.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  loadAll();
+}
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+// ─── DATA FETCH ───
+async function loadAll() {
+  document.getElementById('dbStatus').textContent = 'Loading…';
+  const { data, error } = await sb.from('v_f27_holiday_at_risk').select('*');
+  if (error) {
+    document.getElementById('dbStatus').textContent = 'Error';
+    console.error(error);
+    document.getElementById('itemsTbody').innerHTML =
+      `<tr><td colspan="12" class="abc-empty">Failed to load data: ${error.message}</td></tr>`;
+    return;
+  }
+  DATA = data || [];
+  document.getElementById('dbStatus').textContent = 'Live';
+  populateBrandSelect();
+  renderAll();
+}
+
+function populateBrandSelect() {
+  const sel = document.getElementById('brandSelect');
+  const brands = Array.from(new Set(DATA.map(r => r.brand))).sort();
+  sel.innerHTML = '<option value="">All brands</option>' +
+    brands.map(b => `<option value="${b}">${b}</option>`).join('');
+}
+
+// ─── FILTERS ───
+function getFilteredRows() {
+  return DATA.filter(r => {
+    if (state.activeDivision !== 'ALL' && r.division !== state.activeDivision) return false;
+    if (state.selectedBrand && r.brand !== state.selectedBrand) return false;
+    if (!state.activeCategories.has(r.category)) return false;
+    return true;
+  });
+}
+
+function setDivision(div) {
+  state.activeDivision = div;
+  document.querySelectorAll('.abc-pill[data-div]').forEach(p => {
+    p.classList.toggle('active', p.dataset.div === div);
+  });
+  // Filter brand dropdown to brands in this division
+  const sel = document.getElementById('brandSelect');
+  const prevBrand = state.selectedBrand;
+  const brands = Array.from(new Set(
+    DATA.filter(r => div === 'ALL' || r.division === div).map(r => r.brand)
+  )).sort();
+  sel.innerHTML = '<option value="">All brands</option>' +
+    brands.map(b => `<option value="${b}"${b === prevBrand ? ' selected' : ''}>${b}</option>`).join('');
+  if (prevBrand && !brands.includes(prevBrand)) {
+    state.selectedBrand = '';
+    sel.value = '';
+  }
+  renderAll();
+}
+
+function setBrand(brand) {
+  state.selectedBrand = brand;
+  renderAll();
+}
+
+function toggleCategory(cat) {
+  if (state.activeCategories.has(cat)) state.activeCategories.delete(cat);
+  else state.activeCategories.add(cat);
+  document.querySelectorAll('.abc-pill[data-cat]').forEach(p => {
+    p.classList.toggle('active', state.activeCategories.has(p.dataset.cat));
+  });
+  renderAll();
+}
+
+function toggleRiskOnly() {
+  state.riskOnly = !state.riskOnly;
+  document.getElementById('riskToggle').classList.toggle('active', state.riskOnly);
+  renderItemsTable();
+}
+
+function setItemSearch(q) {
+  state.itemSearch = q.trim().toLowerCase();
+  renderItemsTable();
+}
+
+function setSort(col) {
+  if (state.sort.col === col) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+  else { state.sort.col = col; state.sort.dir = 'desc'; }
+  document.querySelectorAll('.abc-table th.sortable').forEach(th => {
+    th.classList.toggle('active', th.dataset.sort === col);
+  });
+  renderItemsTable();
+}
+
+function resetFilters() {
+  state.activeDivision = 'ALL';
+  state.selectedBrand = '';
+  state.activeCategories = new Set(['Display','Paper','Premium']);
+  state.riskOnly = false;
+  state.itemSearch = '';
+  document.querySelectorAll('.abc-pill[data-div]').forEach(p => p.classList.toggle('active', p.dataset.div === 'ALL'));
+  document.querySelectorAll('.abc-pill[data-cat]').forEach(p => p.classList.add('active'));
+  document.getElementById('riskToggle').classList.remove('active');
+  document.getElementById('itemSearch').value = '';
+  populateBrandSelect();
+  renderAll();
+}
+
+// ─── RENDER ───
+function renderAll() {
+  const rows = getFilteredRows();
+  renderHero(rows);
+  renderDivBudget(rows);
+  renderCatSummary(rows);
+  renderBrandTable(rows);
+  renderItemsTable();
+}
+
+function renderHero(rows) {
+  const total = rows.length;
+  const atRisk = rows.filter(isRisk).length;
+  const pct = total ? (atRisk / total * 100) : 0;
+  const qty = sum(rows, 'ordered_qty');
+  const invest = sum(rows, 'investment_in_moq');
+  const spend = sum(rows, 'budget_spend');
+  document.getElementById('kpiAtRisk').textContent = fmtNum(atRisk);
+  document.getElementById('kpiTotal').textContent = fmtNum(total);
+  document.getElementById('kpiAtRiskPct').textContent = fmtPct(pct);
+  document.getElementById('kpiTotalQty').textContent = fmtNum(qty);
+  document.getElementById('kpiInvest').textContent = fmtUSDk(invest);
+  document.getElementById('kpiSpend').textContent = fmtUSDk(spend);
+  document.getElementById('kpiCombined').textContent = fmtUSDk(spend + invest);
+}
+
+function renderDivBudget(rows) {
+  const host = document.getElementById('divBudgetRow');
+  const divs = ['PRM','LUX'].filter(d => state.activeDivision === 'ALL' || state.activeDivision === d);
+  host.innerHTML = divs.map(d => {
+    const dr = rows.filter(r => r.division === d);
+    const items = dr.length;
+    const atRisk = dr.filter(isRisk).length;
+    const spend = sum(dr, 'budget_spend');
+    const invest = sum(dr, 'investment_in_moq');
+    const budget = BUDGET[d] || 0;
+    const pct = budget ? Math.min(spend / budget * 100, 100) : 0;
+    const over = budget && spend > budget;
+    const remaining = budget - spend;
+    const label = d === 'PRM' ? '<strong>PRM</strong><em>Bold</em>' : '<strong>LUX</strong><em>Luxury</em>';
+    return `
+      <div class="abc-div-card ${d.toLowerCase()}">
+        <div class="abc-div-head">
+          <div class="abc-div-name">${label}</div>
+          <div class="abc-div-count">${items} items · ${atRisk} at risk</div>
+        </div>
+        <div class="abc-div-stats">
+          <div>
+            <div class="abc-div-stat-label">Order Spend</div>
+            <div class="abc-div-stat-value">${fmtUSDk(spend)}</div>
+          </div>
+          <div>
+            <div class="abc-div-stat-label">Budget</div>
+            <div class="abc-div-stat-value">${fmtUSDk(budget)}</div>
+          </div>
+          <div>
+            <div class="abc-div-stat-label">% Used</div>
+            <div class="abc-div-stat-value ${over ? 'red' : ''}">${budget ? fmtPct(spend / budget * 100) : '—'}</div>
+          </div>
+          <div>
+            <div class="abc-div-stat-label">${over ? 'Over' : 'Remaining'}</div>
+            <div class="abc-div-stat-value ${over ? 'red' : 'green'}">${fmtUSDk(Math.abs(remaining))}</div>
+          </div>
+        </div>
+        <div class="abc-bar-wrap"><div class="abc-bar ${over ? 'over' : ''}" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="abc-bar-foot">
+          <span>${budget ? fmtPct(spend / budget * 100) : '—'} of budget</span>
+          <span>Req. investment ${fmtUSDk(invest)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  if (!divs.length) host.innerHTML = '<div class="abc-empty">No divisions in current filter</div>';
+}
+
+function renderCatSummary(rows) {
+  const host = document.getElementById('catSummaryRow');
+  const cats = ['Display','Paper','Premium'].filter(c => state.activeCategories.has(c));
+  host.innerHTML = cats.map(c => {
+    const cr = rows.filter(r => r.category === c);
+    const items = cr.length;
+    const atRisk = cr.filter(isRisk).length;
+    const pct = items ? (atRisk / items * 100) : 0;
+    const spend = sum(cr, 'budget_spend');
+    const invest = sum(cr, 'investment_in_moq');
+    return `
+      <div class="abc-cat-card ${c.toLowerCase()}">
+        <div class="abc-cat-name">${c}</div>
+        <div class="abc-cat-stats">
+          <div>
+            <div class="abc-cat-stat-label">Items</div>
+            <div class="abc-cat-stat-value">${fmtNum(items)}</div>
+          </div>
+          <div>
+            <div class="abc-cat-stat-label">At Risk</div>
+            <div class="abc-cat-stat-value red">${fmtNum(atRisk)}</div>
+          </div>
+          <div>
+            <div class="abc-cat-stat-label">% At Risk</div>
+            <div class="abc-cat-stat-value red">${fmtPct(pct)}</div>
+          </div>
+          <div>
+            <div class="abc-cat-stat-label">Order Spend</div>
+            <div class="abc-cat-stat-value">${fmtUSDk(spend)}</div>
+          </div>
+        </div>
+        <div class="abc-cat-bar-wrap"><div class="abc-cat-bar" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="abc-bar-foot" style="margin-top:6px;">
+          <span>${fmtPct(pct)} of items</span>
+          <span>Req. inv. ${fmtUSDk(invest)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  if (!cats.length) host.innerHTML = '<div class="abc-empty">No categories selected</div>';
+}
+
+function renderBrandTable(rows) {
+  const tbody = document.getElementById('brandTbody');
+  const tfoot = document.getElementById('brandTfoot');
+
+  const grouped = {};
+  rows.forEach(r => {
+    if (!grouped[r.brand]) grouped[r.brand] = { brand: r.brand, division: r.division, items: 0, atRisk: 0, spend: 0, invest: 0 };
+    const g = grouped[r.brand];
+    g.items++;
+    if (isRisk(r)) g.atRisk++;
+    g.spend += Number(r.budget_spend) || 0;
+    g.invest += Number(r.investment_in_moq) || 0;
+  });
+
+  const sortedBrands = Object.values(grouped).sort((a,b) => b.invest - a.invest || b.atRisk - a.atRisk);
+  document.getElementById('brandMeta').textContent = `${sortedBrands.length} brand${sortedBrands.length === 1 ? '' : 's'}`;
+
+  tbody.innerHTML = sortedBrands.length ? sortedBrands.map(b => {
+    const riskPct = b.items ? (b.atRisk / b.items * 100) : 0;
+    return `
+      <tr>
+        <td>${b.brand}</td>
+        <td><span class="abc-div-badge ${b.division.toLowerCase()}">${b.division}</span></td>
+        <td class="num">${fmtNum(b.items)}</td>
+        <td class="num" style="color:${b.atRisk ? 'var(--abc-red)' : 'inherit'}">${fmtNum(b.atRisk)}</td>
+        <td class="num" style="color:${riskPct > 50 ? 'var(--abc-red)' : 'inherit'}">${fmtPct(riskPct)}</td>
+        <td class="num">${fmtUSD(b.spend)}</td>
+        <td class="num" style="color:${b.invest ? 'var(--gold)' : 'inherit'}">${fmtUSD(b.invest)}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="7" class="abc-empty">No brands in current filter</td></tr>';
+
+  const tItems = sortedBrands.reduce((s,b) => s + b.items, 0);
+  const tAtRisk = sortedBrands.reduce((s,b) => s + b.atRisk, 0);
+  const tSpend = sortedBrands.reduce((s,b) => s + b.spend, 0);
+  const tInvest = sortedBrands.reduce((s,b) => s + b.invest, 0);
+  const tPct = tItems ? (tAtRisk / tItems * 100) : 0;
+  tfoot.innerHTML = sortedBrands.length ? `
+    <tr>
+      <td>Total</td><td></td>
+      <td class="num">${fmtNum(tItems)}</td>
+      <td class="num">${fmtNum(tAtRisk)}</td>
+      <td class="num">${fmtPct(tPct)}</td>
+      <td class="num">${fmtUSD(tSpend)}</td>
+      <td class="num">${fmtUSD(tInvest)}</td>
+    </tr>
+  ` : '';
+}
+
+function renderItemsTable() {
+  const tbody = document.getElementById('itemsTbody');
+  let rows = getFilteredRows();
+  if (state.riskOnly) rows = rows.filter(isRisk);
+  if (state.itemSearch) {
+    const q = state.itemSearch;
+    rows = rows.filter(r =>
+      (r.pos_number && r.pos_number.toLowerCase().includes(q)) ||
+      (r.item_description && r.item_description.toLowerCase().includes(q))
+    );
+  }
+  // Sort
+  const { col, dir } = state.sort;
+  const numCols = new Set(['site_moq','portal_price','ordered_qty','plus_minus_moq','budget_spend','investment_in_moq']);
+  rows.sort((a,b) => {
+    let va = a[col], vb = b[col];
+    if (numCols.has(col)) {
+      va = Number(va); vb = Number(vb);
+      if (isNaN(va)) va = -Infinity;
+      if (isNaN(vb)) vb = -Infinity;
+    } else {
+      va = (va || '').toString().toLowerCase();
+      vb = (vb || '').toString().toLowerCase();
+    }
+    if (va < vb) return dir === 'asc' ? -1 : 1;
+    if (va > vb) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  document.getElementById('itemsMeta').textContent = `${rows.length} item${rows.length === 1 ? '' : 's'} shown`;
+
+  tbody.innerHTML = rows.length ? rows.map(r => {
+    const risk = isRisk(r);
+    const catSlug = (r.category || '').toLowerCase();
+    return `
+      <tr>
+        <td>${r.brand || ''}</td>
+        <td><span class="abc-div-badge ${(r.division || '').toLowerCase()}">${r.division || ''}</span></td>
+        <td><span class="abc-cat-tag ${catSlug}">${r.category || ''}</span></td>
+        <td class="mono">${r.pos_number || ''}</td>
+        <td>${r.item_description || ''}</td>
+        <td class="num">${fmtNum(r.site_moq)}</td>
+        <td class="num">${fmtPrice(r.portal_price)}</td>
+        <td class="num">${fmtNum(r.ordered_qty)}</td>
+        <td class="num" style="color:${(r.plus_minus_moq || 0) < 0 ? 'var(--abc-red)' : 'inherit'}">${r.plus_minus_moq != null ? (r.plus_minus_moq > 0 ? '+' : '') + fmtNum(r.plus_minus_moq) : '—'}</td>
+        <td class="num">${fmtUSD(r.budget_spend)}</td>
+        <td class="num" style="color:${r.investment_in_moq ? 'var(--gold)' : 'inherit'}">${fmtUSD(r.investment_in_moq)}</td>
+        <td><span class="abc-status ${risk ? 'risk' : 'ok'}">${risk ? 'At Risk' : 'OK'}</span></td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="12" class="abc-empty">No items match the current filters</td></tr>';
+}
+</script>
+</body>
+</html>

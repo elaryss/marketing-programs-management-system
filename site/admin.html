@@ -1,0 +1,1567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Overclock Hub</title>
+
+<!-- Pre-render auth peek: skip showing gate if a session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="config.local.js"></script>
+<style>
+/* ━━━ ADMIN · page-specific ━━━ */
+
+/* Row class hooks used by data-driven render */
+.t-row .primary{color:var(--ink);font-weight:600}
+.t-row .code{font-family:var(--mono);font-size:10.5px;color:var(--blue-deep)}
+.t-row .meta{color:var(--gray-mid);font-size:11px}
+.t-row .edit{
+  color:var(--blue-deep);
+  font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+}
+
+/* Category-style badges used in brands + item_types */
+.badge.prm{background:var(--blue-soft);color:var(--blue-deep);border-color:rgba(30,63,214,0.22)}
+.badge.lux{background:var(--orange-soft);color:var(--orange-deep);border-color:rgba(255,122,26,0.28)}
+.badge.paper{background:var(--blue-soft);color:var(--blue-deep);border-color:rgba(30,63,214,0.22)}
+.badge.display{background:rgba(0,180,188,0.12);color:#006a70;border-color:rgba(0,180,188,0.25)}
+.badge.premium{background:var(--orange-soft);color:var(--orange-deep);border-color:rgba(255,122,26,0.28)}
+
+/* Required asterisk */
+.field-lbl .req{color:var(--red);margin-left:2px}
+.field-help{font-size:10.5px;color:var(--gray-soft);margin-top:4px}
+
+/* Checkbox field (used by seasons.is_default) */
+.field-checkbox{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0}
+.field-checkbox input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:var(--blue)}
+.field-checkbox-lbl{font-size:12px;color:var(--ink)}
+
+/* Season status badges — chronological palette */
+.badge.planning{background:var(--off-white);color:var(--gray-mid);border-color:var(--line-light)}
+.badge.sourcing{background:var(--blue-soft);color:var(--blue-deep);border-color:rgba(30,63,214,0.22)}
+.badge.production{background:var(--orange-soft);color:var(--orange-deep);border-color:rgba(255,122,26,0.28)}
+.badge.fulfillment{background:rgba(255,122,26,0.06);color:var(--orange-deep);border-color:rgba(255,122,26,0.20)}
+.badge.complete{background:rgba(26,122,74,0.10);color:#155a36;border-color:rgba(26,122,74,0.25)}
+
+/* Field grid (drawer uses 2-col layout) */
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+.field-grid .field{margin-bottom:0}
+.field-grid .field.full{grid-column:1/-1}
+
+/* Empty + loading */
+.empty-state{padding:64px 32px;text-align:center;color:var(--gray-soft);font-size:13px}
+.empty-state a{color:var(--blue-deep);font-weight:600;text-decoration:none}
+.empty-state a:hover{text-decoration:underline}
+.loading{
+  padding:48px 32px;text-align:center;color:var(--gray-soft);
+  font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;
+}
+.loading::after{
+  content:'';display:inline-block;width:12px;height:12px;margin-left:8px;
+  border:2px solid var(--line-light);border-top-color:var(--blue);border-radius:50%;
+  animation:adminSpin 0.7s linear infinite;vertical-align:middle;
+}
+@keyframes adminSpin{to{transform:rotate(360deg)}}
+
+/* Toast alias */
+.toast.success{border-left-color:#3ae07a}
+
+/* Drawer tab label (small kicker over title) */
+.drawer-tab-label{
+  font-family:var(--mono);font-size:10px;letter-spacing:2px;
+  color:var(--orange-deep);text-transform:uppercase;margin-bottom:4px;
+}
+
+.panel{padding:24px 48px 48px}
+
+/* ━━━ CHAT USAGE TAB ━━━ */
+.cu-controls{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:16px 18px;margin-bottom:18px;
+  background:var(--blue-tint);border:1px solid var(--line-light);border-radius:6px;
+}
+.cu-window-lbl{
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--gray-mid);
+}
+.cu-window-lbl select{
+  font-family:inherit;font-size:12px;letter-spacing:0;text-transform:none;
+  padding:6px 10px;border:1px solid var(--line);border-radius:4px;
+  background:#fff;color:var(--ink);
+}
+.cu-controls .btn{margin-left:auto}
+.cu-empty,.cu-loading{padding:48px 32px;text-align:center;color:var(--gray-soft);font-size:13px}
+.cu-row{
+  border:1px solid var(--line-light);border-radius:6px;
+  margin-bottom:10px;background:#fff;overflow:hidden;
+}
+.cu-row-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;cursor:pointer;
+}
+.cu-row-head:hover{background:var(--blue-tint)}
+.cu-row-date{font-weight:600;color:var(--ink);font-size:13.5px}
+.cu-row-meta{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:1px;
+  color:var(--gray-mid);margin-top:3px;
+}
+.cu-row-toggle{
+  font-family:var(--mono);font-size:18px;color:var(--blue-deep);
+  transition:transform 0.18s;
+}
+.cu-row.open .cu-row-toggle{transform:rotate(90deg)}
+.cu-row-body{
+  display:none;padding:0 22px 20px;border-top:1px solid var(--line-light);
+}
+.cu-row.open .cu-row-body{display:block}
+.cu-markdown{
+  font-size:13.5px;line-height:1.6;color:var(--ink);
+  padding-top:16px;
+}
+.cu-markdown h1,.cu-markdown h2,.cu-markdown h3{
+  font-family:var(--head);color:var(--ink);margin:18px 0 8px;
+}
+.cu-markdown h1{font-size:18px}.cu-markdown h2{font-size:15.5px}.cu-markdown h3{font-size:13.5px}
+.cu-markdown p{margin:8px 0}
+.cu-markdown ul,.cu-markdown ol{margin:8px 0 8px 22px}
+.cu-markdown li{margin:4px 0}
+.cu-markdown code{
+  background:var(--blue-tint);padding:1px 5px;border-radius:3px;
+  font-family:var(--mono);font-size:11.5px;
+}
+.cu-markdown blockquote{
+  border-left:3px solid var(--blue);padding:4px 12px;margin:10px 0;
+  color:var(--gray-mid);font-style:italic;
+}
+.cu-markdown strong{color:var(--ink)}
+
+/* ━━━ REPORT QUEUE TAB ━━━ */
+.rq-list{display:flex;flex-direction:column;gap:10px}
+.rq-row{
+  border:1px solid var(--line-light);border-radius:6px;background:#fff;overflow:hidden;
+  transition:border-color 0.15s;
+}
+.rq-row:hover{border-color:var(--line)}
+.rq-row.open{border-color:var(--blue)}
+.rq-row-head{
+  display:grid;grid-template-columns:130px 1fr 200px 130px 32px;
+  align-items:center;gap:14px;padding:13px 18px;cursor:pointer;
+}
+.rq-row-head:hover{background:var(--blue-tint)}
+.rq-when{font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em;color:var(--gray-mid)}
+.rq-title{font-weight:600;color:var(--ink);font-size:14px;line-height:1.4}
+.rq-title-sub{font-size:11.5px;color:var(--gray-mid);margin-top:2px;font-family:var(--mono)}
+.rq-requester{font-size:12px;color:var(--gray-mid)}
+.rq-toggle{font-family:var(--mono);font-size:18px;color:var(--blue-deep);transition:transform 0.18s;text-align:right}
+.rq-row.open .rq-toggle{transform:rotate(90deg)}
+
+.rq-status{
+  display:inline-block;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:0.12em;text-transform:uppercase;font-weight:600;
+  padding:3px 9px;border-radius:3px;border:1px solid transparent;
+}
+.rq-status-pending{background:#fff7e6;color:#a35400;border-color:#f5d4a0}
+.rq-status-in_progress{background:#e8f1ff;color:#1545c4;border-color:#c2d3ff}
+.rq-status-ready_for_review{background:#e6f5ff;color:#005a8c;border-color:#a8d8f0}
+.rq-status-approved_sent{background:#e8f7ec;color:#1f6e35;border-color:#aedabe}
+.rq-status-rejected{background:#fbeaea;color:#8b2a2a;border-color:#e8b5b5}
+
+/* Cost + auto-build chips next to the status */
+.rq-badges{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:5px}
+.rq-cost-chip{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.06em;
+  padding:2px 7px;border-radius:3px;border:1px solid transparent;font-weight:600;
+}
+.rq-cost-chip.under{background:#e8f7ec;color:#1f6e35;border-color:#aedabe}
+.rq-cost-chip.over{background:#fff4e0;color:#a35400;border-color:#f5d4a0}
+.rq-auto-chip{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;
+  background:#eef2ff;color:#3b48a8;border:1px solid #d5dbf0;
+  padding:2px 6px;border-radius:3px;
+}
+
+/* ── Auto-review feature styles. Removing these (along with the
+   reviewer endpoint + prompt + DB columns) takes the feature out
+   cleanly — nothing else depends on them. ── */
+
+/* Reviewer verdict chip on the row head */
+.rq-review-chip{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.06em;
+  padding:2px 7px;border-radius:3px;border:1px solid transparent;font-weight:600;
+}
+.rq-review-chip.pass{background:#e8f7ec;color:#1f6e35;border-color:#aedabe}
+.rq-review-chip.warn{background:#fff7e6;color:#a35400;border-color:#f5d4a0}
+.rq-review-chip.fail{background:#fbeaea;color:#8b2a2a;border-color:#e8b5b5}
+.rq-review-chip.none{background:#f1f3f6;color:var(--gray-mid);border-color:var(--line-light)}
+
+/* Auto-review toggle in the controls bar */
+.rq-toggle-wrap{
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  margin-left:6px;padding:6px 10px;border-radius:4px;
+  border:1px solid var(--line-light);background:#fff;
+}
+.rq-toggle-wrap:hover{border-color:var(--blue)}
+.rq-toggle-wrap input[type="checkbox"]{margin:0;cursor:pointer}
+.rq-toggle-wrap input[type="checkbox"]:disabled{cursor:not-allowed}
+.rq-toggle-lbl{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em;
+  color:var(--ink);font-weight:500;
+}
+.rq-toggle-state{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.14em;
+  text-transform:uppercase;font-weight:600;
+  padding:2px 7px;border-radius:3px;
+}
+.rq-toggle-state.on{background:#e8f7ec;color:#1f6e35;border:1px solid #aedabe}
+.rq-toggle-state.off{background:#f1f3f6;color:var(--gray-mid);border:1px solid var(--line-light)}
+
+/* Findings panel inside the expanded row body */
+.rq-review-verdict{
+  display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:0.12em;
+  text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:3px;
+}
+.rq-review-verdict.pass{background:#e8f7ec;color:#1f6e35}
+.rq-review-verdict.warn{background:#fff7e6;color:#a35400}
+.rq-review-verdict.fail{background:#fbeaea;color:#8b2a2a}
+
+.rq-review-stub{display:flex;align-items:center;gap:14px;padding-top:6px}
+
+.rq-review-table{
+  display:flex;flex-direction:column;gap:6px;
+  background:var(--off-white,#f7f9fb);border:1px solid var(--line-light);
+  border-radius:4px;padding:12px 14px;margin-top:6px;
+}
+.rq-review-row{
+  display:grid;grid-template-columns:180px 50px 1fr;align-items:center;
+  gap:12px;font-size:12.5px;line-height:1.5;
+}
+.rq-review-crit{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:0.04em;
+  text-transform:uppercase;color:var(--ink);font-weight:600;
+}
+.rq-review-score{
+  font-family:var(--display);font-weight:700;font-size:18px;
+  text-align:center;padding:2px 8px;border-radius:4px;
+}
+.rq-review-score.good{background:#e8f7ec;color:#1f6e35}
+.rq-review-score.warn{background:#fff7e6;color:#a35400}
+.rq-review-score.bad{background:#fbeaea;color:#8b2a2a}
+.rq-review-score-max{
+  font-family:var(--mono);font-size:9.5px;color:var(--gray-mid);
+  font-weight:500;margin-left:2px;
+}
+.rq-review-rat{color:var(--gray-deep,#4c545e);font-size:12px;line-height:1.5}
+
+.rq-review-eyebrow{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--gray-soft);font-weight:600;
+  margin:14px 0 6px;
+}
+.rq-review-flags ul,
+.rq-review-suggestions ol{
+  margin:0;padding-left:22px;font-size:12.5px;line-height:1.55;color:var(--ink);
+}
+.rq-review-flags li{margin-bottom:4px}
+.rq-review-flag.major{color:#8b2a2a}
+.rq-review-flag.minor{color:var(--gray-deep,#4c545e)}
+.rq-review-suggestions li{margin-bottom:4px}
+
+.rq-review-meta{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-top:12px;
+}
+
+.rq-row-body{display:none;padding:0 22px 22px;border-top:1px solid var(--line-light)}
+.rq-row.open .rq-row-body{display:block}
+.rq-section{padding-top:18px}
+.rq-section h5{
+  font-family:var(--mono);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;
+  color:var(--gray-soft);margin:0 0 8px;
+}
+.rq-desc{font-size:13.5px;line-height:1.55;color:var(--ink);white-space:pre-wrap}
+.rq-filters-chips{display:flex;flex-wrap:wrap;gap:6px}
+.rq-filter-chip{
+  font-family:var(--mono);font-size:10.5px;background:var(--blue-tint);color:var(--blue-deep);
+  padding:3px 8px;border-radius:3px;letter-spacing:0.04em;
+}
+.rq-transcript{
+  background:var(--off-white,#f7f9fb);border:1px solid var(--line-light);
+  border-radius:4px;padding:12px 14px;max-height:280px;overflow-y:auto;
+  font-size:12.5px;line-height:1.55;
+}
+.rq-msg{margin:0 0 10px;display:flex;flex-direction:column;gap:3px}
+.rq-msg:last-child{margin-bottom:0}
+.rq-msg-role{
+  font-family:var(--mono);font-size:9px;letter-spacing:0.16em;text-transform:uppercase;
+  color:var(--gray-soft);
+}
+.rq-msg.user .rq-msg-role{color:var(--orange-deep)}
+.rq-msg.assistant .rq-msg-role{color:var(--blue-deep)}
+.rq-msg-text{color:var(--ink);white-space:pre-wrap}
+
+.rq-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:6px}
+.rq-actions textarea{
+  flex:1 1 320px;min-height:64px;max-height:200px;resize:vertical;
+  font-family:var(--body);font-size:12.5px;padding:8px 11px;
+  border:1px solid var(--line);border-radius:4px;outline:none;
+}
+.rq-actions textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.rq-btn{
+  appearance:none;border:1px solid var(--line);background:#fff;color:var(--ink);
+  cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:0.14em;
+  text-transform:uppercase;font-weight:600;padding:9px 14px;border-radius:4px;
+  transition:background 0.15s,border-color 0.15s,color 0.15s;
+}
+.rq-btn:hover{border-color:var(--blue);color:var(--blue-deep)}
+.rq-btn.primary{background:var(--orange-deep);color:#fff;border-color:var(--orange-deep)}
+.rq-btn.primary:hover{background:#cc5800;border-color:#cc5800;color:#fff}
+.rq-btn.success{background:#1f6e35;color:#fff;border-color:#1f6e35}
+.rq-btn.success:hover{background:#185a2a;border-color:#185a2a;color:#fff}
+.rq-btn.danger{background:#fff;color:#8b2a2a;border-color:#e8b5b5}
+.rq-btn.danger:hover{background:#fbeaea;border-color:#c95757;color:#8b2a2a}
+.rq-btn:disabled{opacity:0.55;cursor:not-allowed}
+.rq-meta-note{font-family:var(--mono);font-size:10.5px;color:var(--gray-mid);letter-spacing:0.04em}
+
+.rq-empty,.rq-loading{padding:48px 32px;text-align:center;color:var(--gray-soft);font-size:13px}
+
+@media(max-width:900px){
+  .panel{padding-left:24px;padding-right:24px}
+  .field-grid{grid-template-columns:1fr}
+  .cu-controls{flex-direction:column;align-items:stretch}
+  .cu-controls .btn{margin-left:0}
+  .rq-row-head{grid-template-columns:1fr 80px;grid-template-rows:auto auto;gap:6px 12px}
+  .rq-when{grid-column:1/-1}
+  .rq-requester{grid-column:1/2}
+  .rq-toggle{grid-row:2/3}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Admin</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="5" y="11" width="14" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 1 1 8 0v4"/>
+    </svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool. Live database.</div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('passwordInput').focus()">
+    </div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()">
+    </div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link active" href="#">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn warm" id="newBtn" onclick="openDrawer(null)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span id="newBtnLabel">New</span>
+    </button>
+    <button class="btn ghost" onclick="signOut()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sign Out
+    </button>
+  </div>
+</nav>
+
+<section class="cover">
+  <div class="cover-inner">
+    <div class="cover-eyebrow"><span class="chip warm"></span>Reference Data · Live</div>
+    <h1 class="cover-title"><em>Admin</em></h1>
+    <p class="cover-sub">Manage brands, programs, item types, vendors, and countries used across the system.</p>
+  </div>
+</section>
+
+<div class="tab-bar" id="tabBar"><!-- populated by JS --></div>
+
+<section class="panel">
+  <div class="toolbar" id="adminToolbar">
+    <input class="toolbar-search" id="searchInput" type="text" placeholder="Search..." oninput="renderRows()">
+    <div class="toolbar-count" id="toolbarCount">—</div>
+  </div>
+  <div class="table-wrap" id="tableWrap">
+    <div class="loading">Loading</div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>Admin</em></div>
+    <div>Supabase · <span id="dbStatus">Connecting</span></div>
+  </div>
+</footer>
+
+</div>
+
+<!-- ===== DRAWER ===== -->
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-tab-label" id="drawerTabLabel"></div>
+      <div class="drawer-title" id="drawerTitle">Item</div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-foot">
+    <button class="btn danger" id="btnDelete" onclick="deleteRecord()" style="display:none;margin-right:auto;">Delete</button>
+    <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+    <button class="btn warm" id="btnSave" onclick="saveRecord()">Save</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG from window.APP_CONFIG (set by site/config.local.js)
+// ============================================================
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;">'
+    + '<h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2>'
+    + '<p>Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in your Supabase URL + anon key.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const { createClient } = supabase;
+const sb = createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+
+// ============================================================
+// TAB DEFINITIONS — data-driven CRUD config per reference table
+// ============================================================
+const TABS = {
+  brands: {
+    label: 'Brands',
+    table: 'brands',
+    singular: 'Brand',
+    orderBy: 'name',
+    primaryKey: 'id',
+    listColumns: [
+      { key: 'name',       label: 'Name',       grid: '1.5fr', class: 'primary' },
+      { key: 'code',       label: 'Code',       grid: '0.7fr', class: 'code' },
+      { key: 'category',   label: 'Category',   grid: '0.7fr', render: v => v ? `<span class="badge ${v.toLowerCase()}">${v}</span>` : '—' },
+      { key: 'price_tier', label: 'Price Tier', grid: '0.9fr' },
+      { key: '__edit',     label: '',           grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'name',                label: 'Brand Name', type: 'text', required: true, full: true },
+      { name: 'code',                label: 'Brand Code', type: 'text', help: 'Short identifier — used in POS numbers and reports' },
+      { name: 'category',            label: 'Category',   type: 'select', options: ['', 'PRM', 'LUX'] },
+      { name: 'price_tier',          label: 'Price Tier', type: 'select', options: ['', 'Entry', 'Mid', 'Premium', 'Luxury'] },
+      { name: 'target_audience',     label: 'Target Audience', type: 'textarea', full: true },
+      { name: 'competitors',         label: 'Competitors',     type: 'textarea', full: true },
+      { name: 'varietals',           label: 'Varietals',       type: 'textarea', full: true },
+      { name: 'notes',               label: 'Notes',           type: 'textarea', full: true },
+      { name: 'ai_research_summary', label: 'AI Research Summary', type: 'textarea', full: true, help: 'Auto-populated by the Brief Research Agent' },
+    ],
+  },
+
+  programs: {
+    label: 'Programs',
+    table: 'programs',
+    singular: 'Program',
+    orderBy: 'name',
+    primaryKey: 'id',
+    listColumns: [
+      { key: 'name',          label: 'Name',         grid: '1.5fr', class: 'primary' },
+      { key: 'brand_id',      label: 'Brand',        grid: '1fr',   render: (v, row) => brandNameById(v) },
+      { key: 'focus_period',  label: 'Focus Period', grid: '0.8fr' },
+      { key: 'shipping_wave', label: 'Wave',         grid: '0.7fr' },
+      { key: 'status',        label: 'Status',       grid: '1fr',   class: 'meta' },
+      { key: '__edit',        label: '',             grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'name',          label: 'Program Name', type: 'text', required: true, full: true },
+      { name: 'brand_id',      label: 'Brand',        type: 'fk', required: true, fkTable: 'brands' },
+      { name: 'code',          label: 'Program Code', type: 'text' },
+      { name: 'focus_period',  label: 'Focus Period', type: 'text', help: 'e.g. Sep/Oct, Jul/Aug, Q4' },
+      { name: 'focus_period_code', label: 'Focus Period Code', type: 'text' },
+      { name: 'shipping_wave', label: 'Shipping Wave', type: 'text', help: 'e.g. Nov/Dec, Wave 1' },
+      { name: 'category',      label: 'Brand Category', type: 'select', options: ['', 'PRM', 'LUX'] },
+      { name: 'status',        label: 'Status', type: 'select',
+        options: ['draft','brief_in_progress','vendor_briefing','quotes_received','buy_window_open','buy_window_closed','in_production','complete'] },
+      { name: 'buy_window_open_date',  label: 'Buy Window Open',  type: 'date' },
+      { name: 'buy_window_close_date', label: 'Buy Window Close', type: 'date' },
+      { name: 'ship_date',     label: 'Ship Date', type: 'date' },
+      { name: 'theme',         label: 'Theme', type: 'textarea', full: true },
+      { name: 'notes',         label: 'Notes', type: 'textarea', full: true },
+    ],
+  },
+
+  item_types: {
+    label: 'Item Types',
+    table: 'item_types',
+    singular: 'Item Type',
+    orderBy: 'name',
+    primaryKey: 'id',
+    listColumns: [
+      { key: 'name',             label: 'Name',         grid: '1.5fr', class: 'primary' },
+      { key: 'code',             label: 'Code',         grid: '0.7fr', class: 'code' },
+      { key: 'sub_category',     label: 'Sub-Category', grid: '1fr' },
+      { key: 'element_zone',     label: 'Zone',         grid: '1fr', class: 'meta' },
+      { key: 'default_category', label: 'Category',     grid: '0.8fr', render: v => v ? `<span class="badge ${v}">${v}</span>` : '—' },
+      { key: '__edit',           label: '',             grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'name',             label: 'Item Type Name', type: 'text', required: true, full: true, help: 'e.g. Case Sleeve, Necker, Gift Box' },
+      { name: 'code',             label: 'Code', type: 'text' },
+      { name: 'sub_category',     label: 'Sub-Category', type: 'text' },
+      { name: 'element_zone',     label: 'Element Zone', type: 'select',
+        options: ['', 'Print - PRT', 'Display - DSP', 'Premium - PRE'] },
+      { name: 'default_category', label: 'Default Item Category', type: 'select', options: ['', 'paper', 'display', 'premium'] },
+    ],
+  },
+
+  vendors: {
+    label: 'Vendors',
+    table: 'vendors',
+    singular: 'Vendor',
+    orderBy: 'name',
+    primaryKey: 'id',
+    listColumns: [
+      { key: 'name',                    label: 'Name',  grid: '1.5fr', class: 'primary' },
+      { key: 'sourcing_responsibility', label: 'Sourcing', grid: '1fr' },
+      { key: 'email',                   label: 'Email', grid: '1.5fr', class: 'meta' },
+      { key: '__edit',                  label: '',      grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'name',                    label: 'Vendor Name', type: 'text', required: true, full: true },
+      { name: 'email',                   label: 'Email', type: 'text' },
+      { name: 'sourcing_responsibility', label: 'Sourcing Responsibility', type: 'select',
+        options: ['', 'ABC', 'IMS', 'JMS', 'Heard', 'Third Party'] },
+      { name: 'notes',                   label: 'Notes', type: 'textarea', full: true },
+    ],
+  },
+
+  countries: {
+    label: 'Countries',
+    table: 'countries',
+    singular: 'Country',
+    orderBy: 'name',
+    primaryKey: 'iso_code',
+    listColumns: [
+      { key: 'iso_code', label: 'ISO Code', grid: '0.5fr', class: 'code' },
+      { key: 'name',     label: 'Name',     grid: '1fr', class: 'primary' },
+      { key: '__edit',   label: '',         grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'iso_code', label: 'ISO Code', type: 'text', required: true, help: 'Two-letter ISO 3166 code (e.g. US, CN, MX). Becomes the primary key.', maxLength: 3 },
+      { name: 'name',     label: 'Country Name', type: 'text', required: true, full: true },
+    ],
+  },
+
+  seasons: {
+    label: 'Seasons',
+    table: 'seasons',
+    singular: 'Season',
+    orderBy: 'sort_order',
+    primaryKey: 'id',
+    listColumns: [
+      { key: 'sort_order', label: '#',       grid: '0.4fr', class: 'code' },
+      { key: 'name',       label: 'Name',    grid: '1.2fr', class: 'primary' },
+      { key: 'status',     label: 'Status',  grid: '0.9fr', render: v => v ? `<span class="badge ${String(v).toLowerCase()}">${escapeHtml(v)}</span>` : '—' },
+      { key: 'is_default', label: 'Default', grid: '0.6fr', render: v => v ? '<span class="badge prm">DEFAULT</span>' : '<span class="meta">—</span>' },
+      { key: '__edit',     label: '',        grid: '0.5fr', class: 'edit', render: () => 'Edit ›' },
+    ],
+    fields: [
+      { name: 'name',       label: 'Season Name', type: 'text', required: true, full: true, help: 'e.g. "F26 HL Buy" — must match toolkit_items.pre_buy_program exactly for FK linkage. Sort order (the # column) is assigned automatically from this name: chronological by FY, then Summer (SM) → Holiday (HL) → Spring (SP).' },
+      { name: 'status',     label: 'Status',      type: 'select', required: true,
+        options: ['Planning','Sourcing','Buy Window','Production','Fulfillment','Complete'],
+        help: 'Set to "Buy Window" to publish this season’s priced items to the customer storefront (/shop). Any other status hides it from the shop.' },
+      { name: 'is_default', label: 'Default for Toolkit Manager', type: 'checkbox', full: true,
+        help: 'Toolkit Manager pre-loads this season on entry. Only one season can be the default at a time — checking this here will unset any other default automatically.' },
+    ],
+  },
+
+  // Special-case tab: not CRUD. Renders a list of past chat-usage summaries
+  // plus a "Generate" button. See renderChatUsageTab() further down.
+  chat_usage: {
+    label: 'Chat Usage',
+    singular: 'Summary',
+    custom: true,
+    table: 'chat_summaries', // for refreshTabCounts only
+  },
+
+  // Special-case tab: not CRUD. Lists the report-request queue produced by
+  // /api/report-intake. Admin can Build (calls the report-builder agent),
+  // Approve & Send (calls the email function), or Reject each row.
+  // See renderReportQueueTab() further down.
+  report_queue: {
+    label: 'Report Queue',
+    singular: 'Request',
+    custom: true,
+    table: 'report_requests',
+  },
+};
+
+// ============================================================
+// STATE
+// ============================================================
+let activeTab = 'brands';
+let allRows = [];
+let allBrandsCache = [];
+let editingId = null;
+let tabCounts = {};
+
+// ============================================================
+// AUTH
+// ============================================================
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+  const error = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { error.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const { data, error: authError } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (authError) {
+    document.getElementById('passwordInput').classList.add('error');
+    error.textContent = authError.message.includes('Invalid') ? 'Wrong email or password' : authError.message;
+    setTimeout(() => document.getElementById('passwordInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+  document.getElementById('passwordInput').value = '';
+}
+
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  renderTabBar();
+  switchTab('brands');
+  refreshTabCounts();
+}
+
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+// ============================================================
+// TAB BAR
+// ============================================================
+function renderTabBar() {
+  const bar = document.getElementById('tabBar');
+  bar.innerHTML = Object.keys(TABS).map(key => {
+    const t = TABS[key];
+    const count = tabCounts[key] !== undefined ? `<span class="tab-count">${tabCounts[key]}</span>` : '';
+    return `<button class="tab-btn ${key === activeTab ? 'active' : ''}" onclick="switchTab('${key}')">${t.label}${count}</button>`;
+  }).join('');
+}
+
+async function refreshTabCounts() {
+  const keys = Object.keys(TABS);
+  const counts = await Promise.all(keys.map(k => sb.from(TABS[k].table).select('*', { count: 'exact', head: true })));
+  keys.forEach((k, i) => { tabCounts[k] = counts[i].count ?? 0; });
+  renderTabBar();
+}
+
+async function switchTab(key) {
+  activeTab = key;
+  const tab = TABS[key];
+  renderTabBar();
+
+  // Toggle CRUD chrome (New button, search/count toolbar) based on whether
+  // this tab is a custom non-CRUD surface.
+  document.getElementById('newBtn').style.display = tab.custom ? 'none' : '';
+  document.getElementById('adminToolbar').style.display = tab.custom ? 'none' : '';
+
+  document.getElementById('tableWrap').innerHTML = '<div class="loading">Loading</div>';
+
+  if (tab.custom) {
+    if (key === 'chat_usage')   return renderChatUsageTab();
+    if (key === 'report_queue') return renderReportQueueTab();
+    return;
+  }
+
+  document.getElementById('newBtnLabel').textContent = 'New ' + tab.singular;
+  document.getElementById('searchInput').value = '';
+  await loadCurrentTab();
+}
+
+async function loadCurrentTab() {
+  const tab = TABS[activeTab];
+  const PAGE = 1000;
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from(tab.table).select('*').order(tab.orderBy).range(from, from + PAGE - 1);
+    if (error) { showToast('Load failed: ' + error.message, 'error'); return; }
+    if (!data || !data.length) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+  }
+  allRows = rows;
+
+  if (activeTab === 'programs' && !allBrandsCache.length) {
+    const { data: bd } = await sb.from('brands').select('id,name');
+    allBrandsCache = bd || [];
+  }
+
+  renderRows();
+  document.getElementById('dbStatus').textContent = 'Connected';
+}
+
+function brandNameById(id) {
+  if (!id) return '—';
+  const b = allBrandsCache.find(x => x.id === id);
+  return b ? `<span class="primary">${escapeHtml(b.name)}</span>` : '<span class="meta">—</span>';
+}
+
+// ============================================================
+// TABLE
+// ============================================================
+function renderRows() {
+  const tab = TABS[activeTab];
+  const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+  const rows = q
+    ? allRows.filter(r => JSON.stringify(r).toLowerCase().includes(q))
+    : allRows;
+
+  document.getElementById('toolbarCount').innerHTML = `<strong>${rows.length}</strong> of ${allRows.length} ${tab.label.toLowerCase()}`;
+
+  const wrap = document.getElementById('tableWrap');
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="empty-state">No ${tab.label.toLowerCase()} match the current search. <a href="#" onclick="event.preventDefault();openDrawer(null);">Add one ›</a></div>`;
+    return;
+  }
+
+  const gridTemplate = tab.listColumns.map(c => c.grid).join(' ');
+  const headerHtml = `<div class="t-head" style="grid-template-columns:${gridTemplate}">`
+    + tab.listColumns.map(c => `<span>${c.label}</span>`).join('') + '</div>';
+  const rowsHtml = rows.map(r => {
+    const pk = escapeHtml(String(r[tab.primaryKey]));
+    return `<div class="t-row" style="grid-template-columns:${gridTemplate}" onclick="openDrawer('${pk}')">`
+      + tab.listColumns.map(c => {
+        let v = c.key === '__edit' ? '' : r[c.key];
+        const content = c.render ? c.render(v, r) : (v == null || v === '' ? '<span class="meta">—</span>' : escapeHtml(v));
+        return `<span class="${c.class || ''}">${content}</span>`;
+      }).join('')
+      + '</div>';
+  }).join('');
+  wrap.innerHTML = headerHtml + rowsHtml;
+}
+
+// ============================================================
+// DRAWER (create / edit)
+// ============================================================
+async function openDrawer(pk) {
+  const tab = TABS[activeTab];
+  editingId = pk;
+  document.getElementById('btnDelete').style.display = pk ? 'inline-flex' : 'none';
+  document.getElementById('drawerTabLabel').textContent = tab.singular;
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawerBackdrop').classList.add('open');
+  document.getElementById('drawerBody').innerHTML = '<div class="loading">Loading</div>';
+
+  let row = {};
+  if (pk) {
+    const { data } = await sb.from(tab.table).select('*').eq(tab.primaryKey, pk).maybeSingle();
+    row = data || {};
+    document.getElementById('drawerTitle').textContent = row.name || row.iso_code || tab.singular;
+  } else {
+    document.getElementById('drawerTitle').textContent = 'New ' + tab.singular;
+  }
+
+  const fkLoads = await Promise.all(
+    tab.fields.filter(f => f.type === 'fk').map(async f => {
+      const { data } = await sb.from(f.fkTable).select('id,name').order('name');
+      return { name: f.name, options: data || [] };
+    })
+  );
+  const fkOptions = Object.fromEntries(fkLoads.map(x => [x.name, x.options]));
+
+  document.getElementById('drawerBody').innerHTML = '<div class="field-grid">'
+    + tab.fields.map(f => fieldHtml(f, row[f.name], fkOptions[f.name])).join('')
+    + '</div>';
+}
+
+function fieldHtml(f, val, fkOptions) {
+  const id = 'f_' + f.name;
+  const required = f.required ? '<span class="req">*</span>' : '';
+  const help = f.help ? `<div class="field-help">${f.help}</div>` : '';
+  const wrap = (input) => `<div class="field ${f.full ? 'full' : ''}"><label class="field-lbl" for="${id}">${f.label} ${required}</label>${input}${help}</div>`;
+
+  if (f.type === 'textarea') {
+    return wrap(`<textarea class="field-textarea" id="${id}">${escapeHtml(val || '')}</textarea>`);
+  }
+  if (f.type === 'select') {
+    const opts = f.options.map(o => `<option value="${escapeHtml(o)}"${o === val ? ' selected' : ''}>${o === '' ? '—' : escapeHtml(o)}</option>`).join('');
+    return wrap(`<select class="field-select" id="${id}">${opts}</select>`);
+  }
+  if (f.type === 'fk') {
+    const opts = `<option value="">—</option>` + (fkOptions || []).map(o => `<option value="${escapeHtml(o.id)}"${o.id === val ? ' selected' : ''}>${escapeHtml(o.name)}</option>`).join('');
+    return wrap(`<select class="field-select" id="${id}">${opts}</select>`);
+  }
+  if (f.type === 'date') {
+    return wrap(`<input class="field-input" type="date" id="${id}" value="${escapeHtml(val || '')}">`);
+  }
+  if (f.type === 'checkbox') {
+    const checked = val === true ? ' checked' : '';
+    return wrap(`<label class="field-checkbox"><input type="checkbox" id="${id}"${checked}> <span class="field-checkbox-lbl">Enabled</span></label>`);
+  }
+  const ml = f.maxLength ? ` maxlength="${f.maxLength}"` : '';
+  return wrap(`<input class="field-input" type="text" id="${id}" value="${escapeHtml(val || '')}"${ml}>`);
+}
+
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawerBackdrop').classList.remove('open');
+  editingId = null;
+}
+
+async function saveRecord() {
+  const tab = TABS[activeTab];
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const payload = {};
+    for (const f of tab.fields) {
+      const el = document.getElementById('f_' + f.name);
+      let v;
+      if (f.type === 'checkbox') {
+        v = !!el.checked;
+      } else {
+        v = el.value;
+        if (typeof v === 'string') v = v.trim();
+        if (v === '') v = null;
+      }
+      if (f.required && (v == null || v === '')) {
+        showToast(`${f.label} is required`, 'error');
+        btn.disabled = false; btn.textContent = 'Save'; return;
+      }
+      payload[f.name] = v;
+    }
+
+    // seasons.is_default is enforced as a singleton by a partial unique index.
+    // If the user is turning this row into the default, clear any other row's
+    // default first so the index doesn't reject the write.
+    if (activeTab === 'seasons' && payload.is_default === true) {
+      const clearQ = sb.from('seasons').update({ is_default: false }).eq('is_default', true);
+      const { error: clearErr } = editingId
+        ? await clearQ.neq('id', editingId)
+        : await clearQ;
+      if (clearErr) throw clearErr;
+    }
+
+    if (editingId) {
+      const { error } = await sb.from(tab.table).update(payload).eq(tab.primaryKey, editingId);
+      if (error) throw error;
+      showToast('Updated', 'success');
+    } else {
+      const { error } = await sb.from(tab.table).insert(payload);
+      if (error) throw error;
+      showToast('Created', 'success');
+    }
+    closeDrawer();
+    await loadCurrentTab();
+    refreshTabCounts();
+  } catch (e) {
+    console.error(e);
+    showToast('Save failed: ' + (e.message || e), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+async function deleteRecord() {
+  const tab = TABS[activeTab];
+  if (!editingId) return;
+  if (!confirm(`Delete this ${tab.singular.toLowerCase()}? This will fail if any other records still reference it.`)) return;
+  try {
+    const { error } = await sb.from(tab.table).delete().eq(tab.primaryKey, editingId);
+    if (error) {
+      if (String(error.message).match(/foreign key|violates foreign key|still referenced/i)) {
+        showToast(`Can't delete — other records still use this ${tab.singular.toLowerCase()}`, 'error');
+      } else {
+        throw error;
+      }
+      return;
+    }
+    showToast('Deleted', 'success');
+    closeDrawer();
+    await loadCurrentTab();
+    refreshTabCounts();
+  } catch (e) {
+    console.error(e);
+    showToast('Delete failed: ' + (e.message || e), 'error');
+  }
+}
+
+// ============================================================
+// CHAT USAGE TAB — non-CRUD; list past summaries + generate new ones
+// ============================================================
+async function authHeader() {
+  const { data: { session } } = await sb.auth.getSession();
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+}
+
+async function renderChatUsageTab() {
+  const wrap = document.getElementById('tableWrap');
+  wrap.innerHTML = `
+    <div class="cu-controls">
+      <label class="cu-window-lbl">Window
+        <select id="cuDays">
+          <option value="7" selected>last 7 days</option>
+          <option value="14">last 14 days</option>
+          <option value="30">last 30 days</option>
+          <option value="90">last 90 days</option>
+        </select>
+      </label>
+      <button class="btn warm" id="cuGenBtn" onclick="generateChatSummary()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Generate new summary
+      </button>
+    </div>
+    <div class="cu-list" id="cuList"><div class="cu-loading">Loading past summaries</div></div>
+  `;
+  await loadPastSummaries();
+}
+
+async function loadPastSummaries() {
+  const list = document.getElementById('cuList');
+  try {
+    const resp = await fetch('/api/admin/chat-summary', { headers: await authHeader() });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    renderSummaryList(data.summaries || []);
+  } catch (e) {
+    list.innerHTML = `<div class="cu-empty">Failed to load: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function renderSummaryList(summaries) {
+  const list = document.getElementById('cuList');
+  if (!summaries.length) {
+    list.innerHTML = '<div class="cu-empty">No summaries yet. Click <strong>Generate new summary</strong> above to create the first one.</div>';
+    return;
+  }
+  list.innerHTML = summaries.map(s => {
+    const when = new Date(s.generated_at).toLocaleString();
+    return `<div class="cu-row" id="cuRow_${s.id}">
+      <div class="cu-row-head" onclick="toggleSummary('${s.id}')">
+        <div>
+          <div class="cu-row-date">${escapeHtml(when)}</div>
+          <div class="cu-row-meta">last ${s.window_days} days · ${s.session_count} sessions · ${s.user_turn_count} questions · ${s.message_count} messages</div>
+        </div>
+        <span class="cu-row-toggle">›</span>
+      </div>
+      <div class="cu-row-body" id="cuBody_${s.id}"></div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleSummary(id) {
+  const row = document.getElementById('cuRow_' + id);
+  const body = document.getElementById('cuBody_' + id);
+  if (row.classList.contains('open')) {
+    row.classList.remove('open');
+    return;
+  }
+  row.classList.add('open');
+  if (body.dataset.loaded === '1') return; // already fetched
+
+  body.innerHTML = '<div class="cu-loading">Loading summary</div>';
+  try {
+    const resp = await fetch('/api/admin/chat-summary?id=' + encodeURIComponent(id), { headers: await authHeader() });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    const html = DOMPurify.sanitize(marked.parse(data.summary_markdown || '', { breaks: true, gfm: true }));
+    body.innerHTML = `<div class="cu-markdown">${html}</div>`;
+    body.dataset.loaded = '1';
+  } catch (e) {
+    body.innerHTML = `<div class="cu-empty">Failed to load: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+async function generateChatSummary() {
+  const days = parseInt(document.getElementById('cuDays').value, 10) || 7;
+  const btn = document.getElementById('cuGenBtn');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = 'Generating (10–30s)…';
+  try {
+    const resp = await fetch('/api/admin/chat-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ days }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (data.empty) {
+      showToast(data.message || 'No chat activity in the window.', 'error');
+      return;
+    }
+    showToast('Summary generated', 'success');
+    await loadPastSummaries();
+    // Auto-open the new one
+    if (data.id) toggleSummary(data.id);
+    refreshTabCounts();
+  } catch (e) {
+    showToast('Failed: ' + (e.message || String(e)), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
+// ============================================================
+// REPORT QUEUE TAB — non-CRUD; list + Build/Approve/Reject report requests
+// ============================================================
+async function renderReportQueueTab() {
+  const wrap = document.getElementById('tableWrap');
+  wrap.innerHTML = `
+    <div class="cu-controls">
+      <label class="cu-window-lbl">Status filter
+        <select id="rqStatusFilter" onchange="loadReportQueue()">
+          <option value="">all</option>
+          <option value="pending,in_progress,ready_for_review">open (pending + in progress + review)</option>
+          <option value="pending">pending</option>
+          <option value="ready_for_review">ready for review</option>
+          <option value="approved_sent">approved + sent</option>
+          <option value="rejected">rejected</option>
+        </select>
+      </label>
+      <label class="rq-toggle-wrap" title="When on: each built report is auto-reviewed against a 4-criterion rubric, and any report scoring 'pass' OR 4.0+ is automatically approved + emailed to the requester. Off = no review runs, no auto-send, you approve manually.">
+        <input type="checkbox" id="rqAutoReviewToggle" onchange="setAutoReview(this.checked)" disabled>
+        <span class="rq-toggle-lbl">Auto-review + auto-send passing reports</span>
+        <span class="rq-toggle-state" id="rqAutoReviewState">…</span>
+      </label>
+      <button class="btn warm" onclick="loadReportQueue()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Refresh
+      </button>
+    </div>
+    <div class="rq-list" id="rqList"><div class="rq-loading">Loading queue</div></div>
+  `;
+  loadAutoReviewSetting();
+  await loadReportQueue();
+}
+
+// Auto-review toggle — reads/writes app_settings via /api/admin/settings.
+// Safe even when the reviewer feature is disconnected: a failed GET
+// just leaves the toggle disabled with "(unavailable)".
+async function loadAutoReviewSetting() {
+  const cb = document.getElementById('rqAutoReviewToggle');
+  const state = document.getElementById('rqAutoReviewState');
+  if (!cb || !state) return;
+  try {
+    const resp = await fetch('/api/admin/settings', { headers: await authHeader() });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    cb.checked = !!data.auto_review_enabled;
+    cb.disabled = false;
+    state.textContent = cb.checked ? 'on' : 'off';
+    state.className = 'rq-toggle-state ' + (cb.checked ? 'on' : 'off');
+  } catch (e) {
+    cb.disabled = true;
+    state.textContent = '(unavailable)';
+    state.className = 'rq-toggle-state off';
+  }
+}
+
+async function setAutoReview(enabled) {
+  const cb = document.getElementById('rqAutoReviewToggle');
+  const state = document.getElementById('rqAutoReviewState');
+  cb.disabled = true;
+  try {
+    const resp = await fetch('/api/admin/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ auto_review_enabled: enabled }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    cb.checked = !!data.auto_review_enabled;
+    state.textContent = cb.checked ? 'on' : 'off';
+    state.className = 'rq-toggle-state ' + (cb.checked ? 'on' : 'off');
+    showToast('Auto-review ' + (cb.checked ? 'enabled' : 'disabled') + '.', 'success');
+  } catch (e) {
+    showToast('Failed to update setting: ' + (e.message || String(e)), 'error');
+    cb.checked = !enabled;  // revert
+  } finally {
+    cb.disabled = false;
+  }
+}
+
+async function loadReportQueue() {
+  const list = document.getElementById('rqList');
+  if (!list) return;
+  const filter = document.getElementById('rqStatusFilter')?.value || '';
+  try {
+    let q = sb
+      .from('report_requests')
+      .select('id, created_at, title, description, requester_name, requester_email, status, intake_session_id, intake_filters, built_at, reviewed_at, email_sent_at, admin_notes, auto_built, build_cost_usd, auto_build_attempted_at, review_verdict, review_score, review_findings, review_cost_usd, reviewed_by_agent_at')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (filter) {
+      const statuses = filter.split(',').map(s => s.trim()).filter(Boolean);
+      q = q.in('status', statuses);
+    }
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    renderQueueRows(data || []);
+  } catch (e) {
+    list.innerHTML = `<div class="rq-empty">Failed to load: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function renderQueueRows(rows) {
+  const list = document.getElementById('rqList');
+  if (!rows.length) {
+    list.innerHTML = '<div class="rq-empty">No requests in this view. Submit one from the <em>Custom Report → Request new report</em> mode on Analytics.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r => `<div class="rq-row" id="rqRow_${r.id}" data-id="${r.id}">
+      <div class="rq-row-head" onclick="toggleQueueRow('${r.id}')">
+        ${renderQueueRowHeadInner(r)}
+      </div>
+      <div class="rq-row-body" id="rqBody_${r.id}"></div>
+    </div>`).join('');
+  // Stash the rows on the list for re-render after status changes
+  list._cache = rows;
+}
+
+function renderQueueRowHeadInner(r) {
+  const when = new Date(r.created_at).toLocaleString();
+  const statusCls = `rq-status rq-status-${r.status}`;
+  const statusTxt = r.status.replace(/_/g, ' ');
+  const badges = [];
+  if (r.auto_built) badges.push(`<span class="rq-auto-chip">auto</span>`);
+  if (r.build_cost_usd != null) {
+    const cost = Number(r.build_cost_usd);
+    const cls = cost > 1 ? 'over' : 'under';
+    badges.push(`<span class="rq-cost-chip ${cls}">$${cost.toFixed(cost < 1 ? 3 : 2)}${cost > 1 ? ' 🚩' : ''}</span>`);
+  }
+  // Reviewer verdict chip — only on rows that have been reviewed.
+  // Rows with NULL review_verdict get no chip (treated as "Not reviewed").
+  if (r.review_verdict) {
+    const score = r.review_score != null ? Number(r.review_score).toFixed(1) : '';
+    const dot = r.review_verdict === 'pass' ? '🟢' : r.review_verdict === 'warn' ? '🟡' : '🔴';
+    badges.push(`<span class="rq-review-chip ${r.review_verdict}" title="Auto-review: ${r.review_verdict} (${score}/5)">${dot} ${score}</span>`);
+  } else if (r.status === 'ready_for_review' || r.status === 'approved_sent') {
+    badges.push(`<span class="rq-review-chip none" title="No auto-review on file">⚪ not reviewed</span>`);
+  }
+  return `
+    <div class="rq-when">${escapeHtml(when)}</div>
+    <div>
+      <div class="rq-title">${escapeHtml(r.title)}</div>
+      <div class="rq-title-sub">${escapeHtml((r.description || '').slice(0, 80))}${(r.description||'').length>80?'…':''}</div>
+    </div>
+    <div class="rq-requester">${escapeHtml(r.requester_name || '—')}<br><span class="rq-meta-note">${escapeHtml(r.requester_email || '')}</span></div>
+    <div>
+      <span class="${statusCls}">${escapeHtml(statusTxt)}</span>
+      ${badges.length ? `<div class="rq-badges">${badges.join('')}</div>` : ''}
+    </div>
+    <div class="rq-toggle">›</div>
+  `;
+}
+
+async function toggleQueueRow(id) {
+  const row = document.getElementById('rqRow_' + id);
+  const body = document.getElementById('rqBody_' + id);
+  if (row.classList.contains('open')) {
+    row.classList.remove('open');
+    return;
+  }
+  row.classList.add('open');
+  if (body.dataset.loaded === '1') return;
+
+  body.innerHTML = '<div class="rq-loading">Loading details</div>';
+  const cached = document.getElementById('rqList')._cache?.find(r => r.id === id);
+  if (!cached) {
+    body.innerHTML = '<div class="rq-empty">Row not found in cache. Refresh.</div>';
+    return;
+  }
+  // Fetch the intake Q&A transcript (lives in chat_messages keyed on intake_session_id)
+  let transcript = [];
+  if (cached.intake_session_id) {
+    const { data, error } = await sb
+      .from('chat_messages')
+      .select('role, content, created_at')
+      .eq('session_id', cached.intake_session_id)
+      .order('created_at', { ascending: true });
+    if (!error) transcript = data || [];
+  }
+  body.innerHTML = renderQueueRowDetail(cached, transcript);
+  body.dataset.loaded = '1';
+}
+
+function renderQueueRowDetail(r, transcript) {
+  const filters = r.intake_filters || {};
+  const chips = [];
+  if (Array.isArray(filters.year) && filters.year.length) chips.push(`year: ${filters.year.join(', ')}`);
+  if (filters.brand) chips.push(`brand: ${filters.brand}`);
+  if (filters.category) chips.push(`category: ${filters.category}`);
+  if (filters.wave) chips.push(`wave: ${filters.wave}`);
+  const chipsHtml = chips.length
+    ? chips.map(c => `<span class="rq-filter-chip">${escapeHtml(c)}</span>`).join('')
+    : '<span class="rq-meta-note">no scope hints captured</span>';
+  const transcriptHtml = transcript.length
+    ? transcript.map(m => `<div class="rq-msg ${m.role}"><div class="rq-msg-role">${escapeHtml(m.role)}</div><div class="rq-msg-text">${escapeHtml(m.content?.text || '')}</div></div>`).join('')
+    : '<div class="rq-meta-note">no intake transcript</div>';
+
+  // Build metadata (only relevant after a build attempt)
+  const buildMetaBits = [];
+  if (r.auto_built) buildMetaBits.push('triggered automatically');
+  if (r.auto_build_attempted_at) buildMetaBits.push('attempted ' + new Date(r.auto_build_attempted_at).toLocaleString());
+  if (r.built_at) buildMetaBits.push('built ' + new Date(r.built_at).toLocaleString());
+  if (r.build_cost_usd != null) {
+    const c = Number(r.build_cost_usd);
+    buildMetaBits.push(`cost <strong>$${c.toFixed(c < 1 ? 4 : 2)}</strong>${c > 1 ? ' 🚩 over $1 threshold' : ''}`);
+  }
+  // Surface the auto-approve audit trail when present. The reviewer
+  // writes "[auto-approved by reviewer: ...]" to admin_notes so the
+  // admin can tell at a glance which approved_sent rows went out
+  // automatically vs. via a manual click.
+  const autoApprovedNote = (r.admin_notes || '').includes('[auto-approved by reviewer');
+  if (autoApprovedNote) {
+    buildMetaBits.push(`<strong>auto-approved + emailed by reviewer</strong>`);
+  }
+  const buildMetaHtml = buildMetaBits.length
+    ? `<div class="rq-section"><h5>Build metadata</h5><div class="rq-meta-note">${buildMetaBits.join(' · ')}</div></div>`
+    : '';
+
+  const reviewHtml = renderReviewPanel(r);
+
+  return `
+    <div class="rq-section">
+      <h5>Description</h5>
+      <div class="rq-desc">${escapeHtml(r.description)}</div>
+    </div>
+    <div class="rq-section">
+      <h5>Scope hints</h5>
+      <div class="rq-filters-chips">${chipsHtml}</div>
+      ${filters.notes_for_builder ? `<div class="rq-meta-note" style="margin-top:6px"><strong>Notes:</strong> ${escapeHtml(filters.notes_for_builder)}</div>` : ''}
+    </div>
+    <div class="rq-section">
+      <h5>Intake Q&amp;A</h5>
+      <div class="rq-transcript">${transcriptHtml}</div>
+    </div>
+    ${buildMetaHtml}
+    ${reviewHtml}
+    <div class="rq-section">
+      <h5>Actions</h5>
+      ${renderQueueActions(r)}
+    </div>
+  `;
+}
+
+// Renders the auto-review verdict panel. Returns empty string if the row
+// hasn't been reviewed (and isn't eligible to be), so the panel disappears
+// cleanly when the feature is disconnected or never ran.
+function renderReviewPanel(r) {
+  const eligible = r.status === 'ready_for_review' || r.status === 'approved_sent';
+  if (!r.review_verdict && !eligible) return '';
+
+  const findings = r.review_findings || {};
+  const scores = findings.scores || {};
+  const rationale = findings.rationale || {};
+  const flags = Array.isArray(findings.flags) ? findings.flags : [];
+  const suggestions = Array.isArray(findings.suggestions) ? findings.suggestions : [];
+
+  const criteriaLabels = {
+    faithful_to_ask:        'Faithful to the ask',
+    data_supports_story:    'Data supports the story',
+    story_layout_coherence: 'Story–layout coherence',
+    format_hygiene:         'Format hygiene',
+  };
+
+  // Pre-review or review failed — show stub + button so the admin can run it.
+  if (!r.review_verdict) {
+    return `
+      <div class="rq-section">
+        <h5>Auto-review</h5>
+        <div class="rq-review-stub">
+          <span class="rq-meta-note">Not reviewed yet.</span>
+          <button class="rq-btn" onclick="reviewReport('${r.id}')">Run review</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const scoreRows = Object.keys(criteriaLabels).map(k => {
+    const score = scores[k];
+    const rat = rationale[k] || '';
+    const cls = score >= 4 ? 'good' : score === 3 ? 'warn' : 'bad';
+    return `
+      <div class="rq-review-row">
+        <div class="rq-review-crit">${escapeHtml(criteriaLabels[k])}</div>
+        <div class="rq-review-score ${cls}">${score != null ? score : '—'}<span class="rq-review-score-max">/5</span></div>
+        <div class="rq-review-rat">${escapeHtml(rat)}</div>
+      </div>
+    `;
+  }).join('');
+
+  const flagsHtml = flags.length
+    ? `<div class="rq-review-flags">
+         <div class="rq-review-eyebrow">Flags</div>
+         <ul>${flags.map(f => `<li class="rq-review-flag ${escapeHtml(f.severity || '')}"><strong>[${escapeHtml(f.criterion || '')}]</strong> ${escapeHtml(f.detail || '')}</li>`).join('')}</ul>
+       </div>`
+    : '';
+
+  const suggestionsHtml = suggestions.length
+    ? `<div class="rq-review-suggestions">
+         <div class="rq-review-eyebrow">Suggestions</div>
+         <ol>${suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>
+       </div>`
+    : '';
+
+  const cost = r.review_cost_usd != null ? `cost $${Number(r.review_cost_usd).toFixed(4)}` : '';
+  const when = r.reviewed_by_agent_at ? 'reviewed ' + new Date(r.reviewed_by_agent_at).toLocaleString() : '';
+  const meta = [when, cost].filter(Boolean).join(' · ');
+
+  return `
+    <div class="rq-section">
+      <h5>Auto-review · <span class="rq-review-verdict ${r.review_verdict}">${escapeHtml(r.review_verdict)}</span> · ${Number(r.review_score).toFixed(1)}/5</h5>
+      <div class="rq-review-table">${scoreRows}</div>
+      ${flagsHtml}
+      ${suggestionsHtml}
+      <div class="rq-review-meta">
+        <span class="rq-meta-note">${escapeHtml(meta)}</span>
+        <button class="rq-btn" onclick="reviewReport('${r.id}')">Re-review</button>
+      </div>
+    </div>
+  `;
+}
+
+async function reviewReport(id) {
+  const btn = event?.currentTarget;
+  if (btn) { btn.disabled = true; btn.textContent = 'Reviewing…'; }
+  try {
+    const resp = await fetch('/api/admin/report-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ request_id: id }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    showToast(`Review: ${data.verdict} (${data.score}/5) — cost $${Number(data.cost_usd).toFixed(4)}.`, 'success');
+    // refreshQueueRow re-renders the body if the row is open. If it was
+    // closed (admin triggered review from elsewhere), open it so the new
+    // findings panel is visible.
+    await refreshQueueRow(id);
+    const row = document.getElementById('rqRow_' + id);
+    if (row && !row.classList.contains('open')) await toggleQueueRow(id);
+  } catch (e) {
+    showToast('Review failed: ' + (e.message || String(e)), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Run review'; }
+  }
+}
+
+function renderQueueActions(r) {
+  switch (r.status) {
+    case 'pending':
+      return `<div class="rq-actions">
+        <button class="rq-btn primary" onclick="buildReport('${r.id}')">Build report</button>
+        <button class="rq-btn danger" onclick="rejectReport('${r.id}')">Reject</button>
+        <textarea id="rqNotes_${r.id}" placeholder="Optional admin notes (used on reject)"></textarea>
+      </div>`;
+    case 'in_progress':
+      return `<div class="rq-actions">
+        <span class="rq-meta-note">Building… refresh in ~30s, or click Build again if stuck.</span>
+        <button class="rq-btn" onclick="buildReport('${r.id}')">Retry build</button>
+      </div>`;
+    case 'ready_for_review':
+      return `<div class="rq-actions">
+        <a class="rq-btn" href="/report.html?id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Open preview ↗</a>
+        <button class="rq-btn success" onclick="approveReport('${r.id}')">Approve &amp; send email</button>
+        <button class="rq-btn danger" onclick="rejectReport('${r.id}')">Reject</button>
+        <textarea id="rqNotes_${r.id}" placeholder="Optional admin notes"></textarea>
+      </div>`;
+    case 'approved_sent':
+      return `<div class="rq-actions">
+        <span class="rq-meta-note">✓ Sent to <strong>${escapeHtml(r.requester_email)}</strong>${r.email_sent_at ? ' on ' + escapeHtml(new Date(r.email_sent_at).toLocaleString()) : ''}</span>
+        <a class="rq-btn" href="/report.html?id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Open report ↗</a>
+      </div>`;
+    case 'rejected':
+      return `<div class="rq-actions">
+        <span class="rq-meta-note">Rejected${r.admin_notes ? ': ' + escapeHtml(r.admin_notes) : '.'}</span>
+      </div>`;
+    default:
+      return '<span class="rq-meta-note">Unknown status.</span>';
+  }
+}
+
+async function buildReport(id) {
+  const btn = event?.currentTarget;
+  if (btn) { btn.disabled = true; btn.textContent = 'Building (up to ~4 min)…'; }
+  try {
+    const resp = await fetch('/api/admin/report-build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ request_id: id }),
+    });
+    const data = await resp.json();
+    if (resp.status === 409) {
+      // Concurrency guard — another build is in flight or row already built
+      showToast(data.error || 'Build is already in progress for this row.', 'error');
+      await refreshQueueRow(id);
+      return;
+    }
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    showToast(`Report built (${data.cost_usd != null ? '$'+Number(data.cost_usd).toFixed(3) : 'no cost data'}) — review and approve.`, 'success');
+    await refreshQueueRow(id);
+  } catch (e) {
+    showToast('Build failed: ' + (e.message || String(e)), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Build report'; }
+  }
+}
+
+async function approveReport(id) {
+  const notes = document.getElementById('rqNotes_' + id)?.value?.trim() || '';
+  const btn = event?.currentTarget;
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending email…'; }
+  try {
+    const resp = await fetch('/api/admin/report-approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ request_id: id, action: 'approve', admin_notes: notes }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (data.email_sent) {
+      showToast('✓ Approved and email sent.', 'success');
+    } else {
+      // Approval succeeded but email send failed. Surface the actual error
+      // so admin can diagnose (missing SMTP env vars, bad app password, etc).
+      const reason = data.email_error || 'unknown reason — check Vercel function logs';
+      showToast(`⚠ Approved but email FAILED: ${reason}`, 'error');
+      console.error('[approve] email failed:', data);
+    }
+    await refreshQueueRow(id);
+  } catch (e) {
+    showToast('Approve failed: ' + (e.message || String(e)), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Approve & send email'; }
+  }
+}
+
+async function rejectReport(id) {
+  const notes = document.getElementById('rqNotes_' + id)?.value?.trim() || '';
+  if (!confirm('Reject this report request? This cannot be undone.')) return;
+  const btn = event?.currentTarget;
+  if (btn) { btn.disabled = true; btn.textContent = 'Rejecting…'; }
+  try {
+    const resp = await fetch('/api/admin/report-approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ request_id: id, action: 'reject', admin_notes: notes }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    showToast('Rejected.', 'success');
+    await refreshQueueRow(id);
+  } catch (e) {
+    showToast('Reject failed: ' + (e.message || String(e)), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Reject'; }
+  }
+}
+
+async function refreshQueueRow(id) {
+  // Re-fetch the row to pick up the new status + cost + timestamps.
+  const { data, error } = await sb
+    .from('report_requests')
+    .select('id, created_at, title, description, requester_name, requester_email, status, intake_session_id, intake_filters, built_at, reviewed_at, email_sent_at, admin_notes, auto_built, build_cost_usd, auto_build_attempted_at, review_verdict, review_score, review_findings, review_cost_usd, reviewed_by_agent_at')
+    .eq('id', id)
+    .single();
+  if (error || !data) return;
+  // Update cache + re-render just this row's body (transcript is stable, refetch is wasteful)
+  const cache = document.getElementById('rqList')._cache;
+  if (cache) {
+    const i = cache.findIndex(r => r.id === id);
+    if (i >= 0) cache[i] = data;
+  }
+  // Update the header badge + meta inline
+  const row = document.getElementById('rqRow_' + id);
+  if (row) {
+    const head = row.querySelector('.rq-row-head');
+    if (head) {
+      head.innerHTML = renderQueueRowHeadInner(data);
+      head.onclick = () => toggleQueueRow(id);
+    }
+    const body = document.getElementById('rqBody_' + id);
+    // Re-render body with whatever transcript we already fetched (cheap)
+    body.dataset.loaded = '';
+    if (row.classList.contains('open')) {
+      row.classList.remove('open');
+      await toggleQueueRow(id);
+    }
+  }
+  refreshTabCounts();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function showToast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-config.js",
+  "outputDirectory": "site",
+  "cleanUrls": true,
+  "functions": {
+    "api/moq-recommend.py":              { "maxDuration": 30 },
+    "api/admin/report-build.js":         { "maxDuration": 300 },
+    "api/admin/send-report-email.py":    { "maxDuration": 30 },
+    "api/internal/build-hook.js":        { "maxDuration": 30 },
+    "api/internal/auto-build-cron.js":   { "maxDuration": 60 }
+  }
+}

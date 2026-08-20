@@ -1,0 +1,56 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.env
+env/
+.envrc
+
+# Credentials & keys
+*.pem
+*.key
+*.cer
+*.p12
+*.pfx
+credentials.json
+secrets.json
+service-account*.json
+*.secret
+
+# Per-developer site config (Supabase URL + anon key)
+site/config.local.js
+marketplace/config.local.js
+
+# Local MCP / tool caches
+.playwright-mcp/
+
+# Drafts (work in progress, not for main branch)
+drafts/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Node (in case any tooling lands later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts (in case Vercel-related local tooling is added)
+.next/
+dist/
+build/
+.vercel/
+
+# Python (in case any scripting lands later)
+__pycache__/
+*.pyc
+.venv/
+venv/

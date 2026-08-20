@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overclock Hub — Marketing Programs Management System</title>
+
+<!-- Pre-render auth peek: skip showing gate if a Supabase session token is in localStorage -->
+<script>
+(function(){
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
+        document.documentElement.classList.add('has-token');
+        return;
+      }
+    }
+  } catch(_) {}
+})();
+</script>
+
+<link rel="preconnect" href="https://YOUR-PROJECT-REF.supabase.co" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.local.js"></script>
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LIGHT-DOMINANT COMMAND CENTER
+   White/light page · BLUE primary · ORANGE energy (agentic)
+   Dark is an ELEMENT treatment (flow map, charts) — never a full section
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root{
+  --blue:#1E3FD6;
+  --blue-bright:#4E6BFF;
+  --blue-deep:#16278F;
+  --blue-soft:rgba(30,63,214,0.10);
+
+  --orange:#FF7A1A;
+  --orange-bright:#FF9440;
+  --orange-deep:#C75200;
+  --orange-soft:rgba(255,122,26,0.12);
+
+  --black:#0a0d14;
+  --near-black:#11151f;
+  --panel-dark:#161b27;
+  --line-dark:rgba(255,255,255,0.10);
+
+  --white:#ffffff;
+  --page:#f4f6f9;
+  --off-white:#eef1f5;
+  --line-light:#e3e6ec;
+  --ink:#0a0d14;
+  --gray-mid:#4c545e;
+  --gray-soft:#6c7682;
+
+  --elev:0 1px 2px rgba(10,13,20,0.05), 0 8px 22px rgba(10,13,20,0.08);
+  --elev-hi:0 6px 14px rgba(10,13,20,0.08), 0 24px 50px rgba(10,13,20,0.16);
+  --hair:rgba(10,13,20,0.05);
+
+  --display:'Sora',sans-serif;
+  --body:'Hanken Grotesk',sans-serif;
+  --mono:'DM Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--page);color:var(--ink);font-family:var(--body);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+.chip{display:inline-block;background:var(--blue);transform:skewX(-12deg)}
+.chip.warm{background:var(--orange)}
+
+/* ━━━ NAV ━━━ */
+.nav{position:sticky;top:0;background:#0a0d16;border-bottom:1px solid rgba(255,255,255,0.06);box-shadow:0 6px 22px rgba(10,13,20,0.22);display:flex;align-items:center;padding:0 36px;z-index:50;overflow:hidden}
+.nav::before{content:'';position:absolute;inset:0;background:radial-gradient(480px 140px at 6% 50%,rgba(78,107,255,0.22),transparent 70%);pointer-events:none}
+.nav>*{position:relative;z-index:2}
+.brand{font-family:var(--mono);font-weight:500;font-size:14px;letter-spacing:3px;text-transform:uppercase;color:#fff;padding:18px 0;margin-right:40px;text-decoration:none;display:flex;align-items:center}
+.brand em{color:var(--blue-bright);font-style:normal;text-shadow:0 0 14px rgba(78,107,255,0.55)}
+.nav-links{display:flex}
+.nav-link{position:relative;font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#cdd4df;padding:20px 18px;border-bottom:2px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;text-decoration:none}
+.nav-link:hover{color:#fff}
+.nav-link.active{color:#fff;border-bottom-color:var(--blue-bright);text-shadow:0 0 12px rgba(78,107,255,0.45)}
+.nav-link.active::after{content:'';position:absolute;left:12px;right:12px;bottom:-3px;height:7px;background:radial-gradient(closest-side,rgba(78,107,255,0.6),transparent);filter:blur(2px);pointer-events:none}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.status-pill{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#d6dce5;padding:7px 13px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.06)}
+.status-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--blue-bright);box-shadow:0 0 8px rgba(78,107,255,0.6);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+/* ━━━ HERO ━━━ */
+.hero{background:linear-gradient(180deg,#ffffff 0%,var(--page) 100%);color:var(--ink);padding:92px 48px 76px;position:relative;overflow:hidden;border-bottom:1px solid var(--line-light)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(720px 600px at 3% 96%,rgba(30,63,214,0.06),transparent 60%);pointer-events:none}
+.hero::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(10,13,20,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(10,13,20,0.035) 1px,transparent 1px);background-size:54px 54px;mask-image:linear-gradient(180deg,#000,transparent 72%);pointer-events:none}
+.hero-inner{max-width:1280px;margin:0 auto;position:relative;z-index:2}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:4px;text-transform:uppercase;color:var(--orange-deep);margin-bottom:24px;display:flex;align-items:center;gap:12px}
+.eyebrow .chip{width:26px;height:9px}
+.h1{font-family:var(--display);font-weight:700;font-size:clamp(40px,6.3vw,80px);line-height:1.02;letter-spacing:-1.5px;color:var(--ink);max-width:1040px;margin-bottom:22px}
+.h1 em{color:var(--blue);font-style:normal}
+.lede{font-size:16px;line-height:1.7;color:var(--gray-mid);max-width:600px;margin-bottom:32px;font-weight:400}
+.hero-cta{display:inline-flex;align-items:center;gap:12px;background:var(--orange);color:#241000;font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:500;padding:14px 24px;text-decoration:none;margin-bottom:46px;transition:background .2s,transform .2s,box-shadow .2s;clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%)}
+.hero-cta:hover{background:var(--orange-bright);transform:translateY(-2px);box-shadow:0 12px 28px rgba(255,122,26,0.28)}
+.hero-cta .arr{font-family:var(--display);font-weight:700;font-size:15px}
+.hero-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:920px}
+.meta-card{background:#fff;padding:18px 20px;position:relative;border:1px solid var(--hair);border-radius:5px;box-shadow:var(--elev)}
+.meta-card.live{box-shadow:inset 3px 0 0 var(--orange), var(--elev)}
+.meta-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:9px}
+.meta-val{font-family:var(--display);font-weight:700;font-size:18px;color:var(--ink);line-height:1.1}
+.meta-val em{color:var(--blue);font-style:normal}
+.meta-card.live .meta-val em{color:var(--orange-deep)}
+
+/* ━━━ SECTION SHELL ━━━ */
+.section{padding:80px 48px}
+.section-inner{max-width:1280px;margin:0 auto}
+.section.alt{background:transparent}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:40px;gap:24px}
+.section-kicker{font-family:var(--mono);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--blue-deep);margin-bottom:13px;display:flex;align-items:center;gap:10px}
+.section-kicker .chip{width:22px;height:8px}
+.section-title{font-family:var(--display);font-weight:700;font-size:clamp(26px,3.6vw,40px);letter-spacing:-1px;line-height:1.04;color:var(--ink)}
+.section-meta{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--gray-mid);text-align:right;white-space:nowrap;padding-bottom:6px}
+.section-meta em{color:var(--orange-deep);font-style:normal}
+
+/* ━━━ MODULES ━━━ */
+.modules{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.mod{background:#fff;border:1px solid var(--hair);border-radius:5px;padding:26px 24px 22px;position:relative;text-decoration:none;color:inherit;display:flex;flex-direction:column;box-shadow:var(--elev);transition:transform .25s,box-shadow .25s,border-color .25s}
+.mod::after{content:'';position:absolute;top:0;right:0;width:18px;height:18px;background:linear-gradient(225deg,var(--blue) 50%,transparent 50%)}
+.mod:hover{transform:translateY(-5px);border-color:rgba(30,63,214,0.4);box-shadow:var(--elev-hi)}
+.mod-idx{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--gray-soft);margin-bottom:24px;display:flex;align-items:center;gap:10px}
+.mod-idx::after{content:'';flex:1;height:1px;background:var(--line-light)}
+.mod:hover .mod-idx{color:var(--blue-deep)}
+.mod-title{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-0.4px;color:var(--ink);margin-bottom:11px;line-height:1.14}
+.mod-desc{font-size:13px;color:var(--gray-mid);line-height:1.65;margin-bottom:18px;flex:1}
+.mod-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--blue-deep);background:var(--blue-soft);padding:4px 9px;border:1px solid rgba(30,63,214,0.22)}
+.mod-foot{display:flex;align-items:center;justify-content:space-between;padding-top:15px;border-top:1px solid var(--line-light)}
+.mod-status{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gray-mid)}
+.mod-status.live{color:var(--blue-deep);font-weight:500}
+.mod-status.paused{color:var(--orange-deep)}
+.mod-arrow{font-family:var(--display);font-weight:700;color:var(--blue-deep);font-size:18px;transition:transform .2s}
+.mod:hover .mod-arrow{transform:translateX(5px)}
+
+/* ━━━ M.02 FEATURED MODULE (orange · agentic) ━━━ */
+.mod.featured::after{background:linear-gradient(225deg,var(--orange) 50%,transparent 50%)}
+.mod.featured:hover{border-color:rgba(255,122,26,0.45)}
+.mod.featured:hover .mod-idx{color:var(--orange-deep)}
+.mod.featured .mod-status.live{color:var(--orange-deep)}
+.mod.featured .mod-arrow{color:var(--orange-deep)}
+.mod.featured .tag{color:var(--orange-deep);background:var(--orange-soft);border-color:rgba(255,122,26,0.28)}
+
+/* ━━━ PROCESS MAP (dark cinematic element on light section — cyan + gold) ━━━ */
+.flow-wrap{background:#050b1a;border:1px solid rgba(0,212,255,0.16);border-radius:6px;padding:38px;position:relative;min-height:400px;overflow:hidden;box-shadow:0 26px 60px rgba(5,11,26,0.55),inset 0 0 140px rgba(0,212,255,0.06),inset 0 0 240px rgba(5,11,26,0.55)}
+.flow-grid{position:absolute;inset:-20px;background-image:linear-gradient(rgba(0,212,255,0.07) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.07) 1px,transparent 1px);background-size:48px 48px;animation:flow-drift 30s linear infinite;pointer-events:none}
+@keyframes flow-drift{from{background-position:0 0,0 0}to{background-position:96px 0,0 96px}}
+.flow-wrap::before{content:'';position:absolute;inset:0;background:radial-gradient(700px 420px at 88% 10%,rgba(20,168,173,0.30),transparent 60%),radial-gradient(640px 480px at 8% 92%,rgba(0,212,255,0.20),transparent 60%);pointer-events:none}
+.flow-wrap::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,0.012) 0,rgba(255,255,255,0.012) 1px,transparent 1px,transparent 3px);pointer-events:none;mix-blend-mode:overlay;z-index:1}
+.flow-canvas{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:28px;align-items:center;min-height:290px;z-index:2}
+.node{background:rgba(10,20,40,0.82);border:1px solid rgba(0,212,255,0.16);border-radius:8px;padding:15px 17px;position:relative;cursor:default;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 0 18px rgba(0,212,255,0.10),0 4px 18px rgba(0,0,0,0.40);transition:border-color .25s,box-shadow .25s,transform .25s}
+.node::before{content:'';position:absolute;top:0;left:14%;right:14%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,212,255,0.60),transparent);transition:background .25s,opacity .25s;pointer-events:none}
+.node:hover{border-color:#00d4ff;box-shadow:0 0 0 1px #00d4ff,0 0 36px rgba(0,212,255,0.45),0 8px 28px rgba(0,0,0,0.50);transform:translateY(-2px)}
+.node:hover::before{background:linear-gradient(90deg,transparent,#00d4ff,transparent)}
+.node-label{font-family:var(--mono);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--gray-soft);margin-bottom:8px}
+.node-title{font-family:var(--display);font-weight:600;font-size:14px;color:#fff;margin-bottom:8px;text-shadow:0 1px 4px rgba(0,0,0,0.40)}
+.node-meta{font-family:var(--mono);font-size:9px;color:#00d4ff}
+/* Agent tiles: identical base styling to step tiles (Approver/Email); the only
+   differentiator is the slow horizontal light sweep that travels across them. */
+.node.agent{overflow:hidden}
+.node.agent::after{content:'';position:absolute;top:0;bottom:0;left:0;width:55%;background:linear-gradient(90deg,transparent 0%,rgba(0,212,255,0.22) 50%,transparent 100%);transform:translateX(-100%);animation:agent-sweep 6s ease-in-out infinite;pointer-events:none}
+@keyframes agent-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(280%)}}
+.flow-legend{display:flex;gap:22px;margin-top:24px;padding-top:18px;border-top:1px solid rgba(0,212,255,0.10);font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gray-soft);position:relative;z-index:2}
+.lg-dot{display:inline-block;width:9px;height:9px;margin-right:7px;vertical-align:middle}
+.lg-dot.step{background:rgba(0,212,255,0.28);border:1px solid #00d4ff}
+.lg-dot.agent{background:rgba(0,212,255,0.30);border:1px solid #00d4ff;animation:agent-dot-pulse 6s ease-in-out infinite}
+@keyframes agent-dot-pulse{0%,100%{box-shadow:0 0 4px rgba(0,212,255,0.4)}50%{box-shadow:0 0 14px rgba(0,212,255,0.95)}}
+
+/* ━━━ PROCESS MAP — horizontal swimlane layout (preserves original card style) ━━━ */
+.flow-lanes{position:relative;z-index:2;display:flex;flex-direction:column;gap:28px}
+.flow-lane{display:flex;flex-direction:column;gap:10px}
+.flow-lane-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gray-soft);padding-left:2px}
+.flow-lane-label em{color:#00d4ff;font-style:normal}
+.flow-lane-label.warm em{color:#7FE6FF}
+
+.flow-lane-row{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+.flow-lane-row.parallel{gap:18px}
+.flow-lane-row .node{flex:1 1 0;min-width:170px}
+.flow-lane-row.pipeline .node{min-width:152px}
+
+/* Horizontal arrow between cards — cyan with glow, gold-tinted for conditional gates */
+.edge-h{display:flex;align-items:center;justify-content:center;flex:0 0 36px;position:relative;min-height:60px;z-index:3}
+.edge-h::before{content:'';position:absolute;left:4px;right:10px;top:50%;height:2px;transform:translateY(-50%);background-image:linear-gradient(to right,#00d4ff 50%,transparent 50%);background-size:8px 2px;filter:drop-shadow(0 0 4px rgba(0,212,255,0.6));animation:march-right 0.9s linear infinite}
+.edge-h::after{content:'';position:absolute;right:0;top:50%;transform:translateY(-50%);width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid #00d4ff;filter:drop-shadow(0 0 4px rgba(0,212,255,0.7))}
+@keyframes march-right{to{background-position:8px 0}}
+
+.edge-h .edge-label{position:absolute;bottom:calc(50% + 12px);background:#050b1a;padding:2px 8px;font-family:var(--mono);font-size:8.5px;letter-spacing:1.2px;text-transform:uppercase;color:#00d4ff;border:1px solid rgba(0,212,255,0.30);border-radius:2px;white-space:nowrap;box-shadow:0 0 8px rgba(0,212,255,0.15)}
+.edge-h .edge-label.optional{color:#7FE6FF;border-color:rgba(0,212,255,0.55);box-shadow:0 0 12px rgba(0,212,255,0.28)}
+
+@media(max-width:900px){
+  .flow-lane-row{gap:14px}
+  .edge-h{display:none}
+  .flow-lane-row .node{flex:1 1 100%}
+}
+
+/* ━━━ SYSTEM OVERVIEW PANEL ━━━ */
+.system-overview{background:#fff;border:1px solid var(--hair);border-radius:6px;padding:38px 42px;box-shadow:var(--elev)}
+.so-intro{max-width:820px;margin-bottom:30px}
+.so-intro h3{font-family:var(--display);font-weight:700;font-size:25px;letter-spacing:-0.6px;color:var(--ink);margin-bottom:14px}
+.so-intro p{font-size:14px;color:#3f4854;line-height:1.78}
+.so-intro em{color:var(--ink);font-style:normal;font-weight:600}
+.so-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:26px}
+.so-block{border:1px solid var(--line-light);border-radius:5px;padding:18px 20px;background:var(--off-white);position:relative}
+.so-block::after{content:'';position:absolute;top:0;left:0;width:18px;height:3px;background:var(--blue)}
+.so-block.warm::after{background:var(--orange)}
+.so-block-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--blue-deep);margin-bottom:10px;margin-top:4px}
+.so-block.warm .so-block-label{color:var(--orange-deep)}
+.so-block-body{font-size:13px;color:var(--gray-mid);line-height:1.7}
+.so-block-body em{color:var(--ink);font-style:normal;font-weight:600}
+.so-block-body code{font-family:var(--mono);font-size:11px;color:var(--blue-deep);background:var(--blue-soft);padding:1px 6px;border-radius:3px}
+.so-links{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding-top:20px;border-top:1px solid var(--line-light);font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.so-links a{color:var(--blue-deep);text-decoration:none;transition:color .15s}
+.so-links a:hover{color:var(--orange-deep)}
+.so-links span{color:var(--gray-soft)}
+
+/* ━━━ FOOTER ━━━ */
+.foot{background:#0b0e17;padding:26px 48px;border-top:1px solid var(--line-dark)}
+.foot-inner{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#9aa3af}
+.foot em{color:var(--blue-bright);font-style:normal}
+
+@media(max-width:980px){
+  .modules,.hero-meta,.flow-canvas{grid-template-columns:1fr 1fr}
+  .so-grid{grid-template-columns:1fr}
+  .section,.hero,.foot,.nav{padding-left:24px;padding-right:24px}
+}
+@media(max-width:560px){
+  .modules,.hero-meta,.flow-canvas{grid-template-columns:1fr}
+  .nav{flex-wrap:wrap}.nav-right{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH GATE ===== -->
+<div id="passwordGate">
+  <div class="gate-card">
+    <div class="gate-logo">Marketing <em>Ops</em></div>
+    <div class="gate-eyebrow">Overclock Hub</div>
+    <svg class="gate-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    <div class="gate-title">Sign In</div>
+    <div class="gate-sub">Internal tool · Live database</div>
+    <div class="gate-input-wrap"><input class="gate-input" type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('gateInput').focus()"></div>
+    <div class="gate-input-wrap"><input class="gate-input" type="password" id="gateInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"></div>
+    <button class="gate-btn" id="signInBtn" onclick="signIn()">Sign In</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-footer">Marketing Operations · Internal</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appContent">
+
+<nav class="nav">
+  <a class="brand" href="index.html">Marketing <em>Ops</em></a>
+  <div class="nav-links">
+    <a class="nav-link active" href="index.html">Main</a>
+    <a class="nav-link" href="toolkit-manager.html">Toolkit</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <a class="nav-link" href="historical-analytics.html">Analytics</a>
+    <a class="nav-link" href="admin.html">Admin</a>
+  </div>
+  <div class="nav-right">
+    <div class="status-pill"><span class="dot"></span> All Modules Live · Demo</div>
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn ghost" onclick="signOut()">Sign Out</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow"><span class="chip warm"></span>Marketing Programs Management System</div>
+    <h1 class="h1">Operations <em>intelligence</em> for promotional programs.</h1>
+    <p class="lede">One system for planning, tracking, and analyzing marketing programs — with AI agents that forecast order quantities, answer questions about your data, and build reports on request.</p>
+    <a class="hero-cta" href="historical-analytics.html">Explore System <span class="arr">→</span></a>
+    <div class="hero-meta">
+      <div class="meta-card live"><div class="meta-label">Agentic Flows</div><div class="meta-val"><em>4</em> Live</div></div>
+      <div class="meta-card"><div class="meta-label">Modules</div><div class="meta-val"><em>4</em> / 4 Live</div></div>
+      <div class="meta-card"><div class="meta-label">Stack</div><div class="meta-val">Supabase · Vercel · Claude · Python</div></div>
+      <div class="meta-card"><div class="meta-label">Build</div><div class="meta-val">v0.4.0</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODULES -->
+<section class="section alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker"><span class="chip"></span>04 Surfaces / Closed-Loop System</div>
+        <h2 class="section-title">Modules</h2>
+      </div>
+      <div class="section-meta">Closed-loop / <em>learning</em></div>
+    </div>
+    <div class="modules">
+      <a class="mod" href="toolkit-manager.html">
+        <div class="mod-idx">M.01</div>
+        <div class="mod-title">Program Planning</div>
+        <div class="mod-desc">Build new national toolkits and manage every item across the full toolkit. Wizard for fresh programs, drawer-based CRUD with brand / program / vendor filters and paper specs.</div>
+        <div class="mod-tags"><span class="tag">Wizard</span><span class="tag">CRUD</span><span class="tag">Filters</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live</span><span class="mod-arrow">→</span></div>
+      </a>
+      <a class="mod featured" href="toolkit-manager.html">
+        <div class="mod-idx">M.02</div>
+        <div class="mod-title">Agentic MOQ Recommendation</div>
+        <div class="mod-desc">Per-item MOQ recommendation. Pulls every historical match across brand × category × season, runs Python stats (mean / median / CV / cancellation rate / trend), then asks Claude for an independent judgment with rationale and risk flags. Both shown side-by-side with a consensus bar.</div>
+        <div class="mod-tags"><span class="tag">Python</span><span class="tag">Claude</span><span class="tag">Side-by-side</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live · 1 agentic flow</span><span class="mod-arrow">→</span></div>
+      </a>
+      <a class="mod" href="reports.html">
+        <div class="mod-idx">M.03</div>
+        <div class="mod-title">Standard Dashboards</div>
+        <div class="mod-desc">Program Dashboard, Historical Analytics, and the Reports catalog. Closed-loop performance intelligence over F24 / F25 / F26 toolkits — program funnel, spend by brand, cancellation patterns, brand panels with KPI tiles and program drill-down.</div>
+        <div class="mod-tags"><span class="tag">F24–F26</span><span class="tag">KPI</span><span class="tag">Trends</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live</span><span class="mod-arrow">→</span></div>
+      </a>
+      <a class="mod featured" href="historical-analytics.html">
+        <div class="mod-idx">M.04</div>
+        <div class="mod-title">Custom Reporting &amp; AI Chat</div>
+        <div class="mod-desc">Three Claude agents working together: a chat analyst (text-to-SQL on any dashboard), an intake agent (collects custom report requests in ≤3 turns), and a builder agent that auto-fires on Supabase webhook to write the report → admin review → emailed to the requester.</div>
+        <div class="mod-tags"><span class="tag">Auto-build</span><span class="tag">Webhook</span><span class="tag">Email</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live · 3 agentic flows</span><span class="mod-arrow">→</span></div>
+      </a>
+    </div>
+
+    <div class="section-head" style="margin-top:46px">
+      <div>
+        <div class="section-kicker"><span class="chip warm"></span>Direct entry / Demo shortcuts</div>
+        <h2 class="section-title">Tools</h2>
+      </div>
+      <div class="section-meta">Skip straight to the surface</div>
+    </div>
+    <div class="modules" style="grid-template-columns:repeat(3,1fr)">
+      <a class="mod" href="toolkit-builder.html">
+        <div class="mod-idx">T.01</div>
+        <div class="mod-title">Toolkit Builder</div>
+        <div class="mod-desc">Stand up a national program from scratch — pick a buy window, queue brands with their paper / display / premium suites, generate line items, and save the toolkit to Supabase in one shot.</div>
+        <div class="mod-tags"><span class="tag">Wizard</span><span class="tag">New</span><span class="tag">Bulk insert</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live</span><span class="mod-arrow">→</span></div>
+      </a>
+      <a class="mod" href="prebuy-dashboard.html">
+        <div class="mod-idx">T.02</div>
+        <div class="mod-title">Program Dashboard</div>
+        <div class="mod-desc">Final spend, cancellation patterns, per-brand panels with program drill-down. Brand × category filters, Fiscal Year + Buy Wave scope, export the current view to a standalone HTML report.</div>
+        <div class="mod-tags"><span class="tag">Dashboard</span><span class="tag">Export</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live</span><span class="mod-arrow">→</span></div>
+      </a>
+      <a class="mod" href="admin.html">
+        <div class="mod-idx">T.03</div>
+        <div class="mod-title">Admin Console</div>
+        <div class="mod-desc">Where the agentic infrastructure becomes visible. Chat usage themes (weekly Claude summary), the Report Queue (intake → auto-build → review → email), and reference-data CRUD.</div>
+        <div class="mod-tags"><span class="tag">Queue</span><span class="tag">Themes</span><span class="tag">CRUD</span></div>
+        <div class="mod-foot"><span class="mod-status live">● Live</span><span class="mod-arrow">→</span></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS MAP (dark element on light) -->
+<section class="section">
+  <div class="section-inner">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker"><span class="chip"></span>Live agent fleet · 5 Claude agents · 3 surfaces</div>
+        <h2 class="section-title">Process Map — How the agents work</h2>
+      </div>
+      <div class="section-meta">▸ <em>Live</em></div>
+    </div>
+    <div class="flow-wrap">
+      <div class="flow-grid"></div>
+
+      <div class="flow-lanes">
+
+        <!-- Lane 1: ambient one-shot agents (no chain) -->
+        <div class="flow-lane">
+          <div class="flow-lane-label warm">Ambient agents · <em>one-shot, on-demand</em></div>
+          <div class="flow-lane-row parallel">
+            <div class="node agent">
+              <div class="node-label">Agent · MOQ</div>
+              <div class="node-title">MOQ Recommender</div>
+              <div class="node-meta">Python stats + Claude</div>
+            </div>
+            <div class="node agent">
+              <div class="node-label">Agent · Chat</div>
+              <div class="node-title">Chat Analyst</div>
+              <div class="node-meta">Claude + guarded SQL</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lane 2: Custom Report multi-agent pipeline (chained) -->
+        <div class="flow-lane">
+          <div class="flow-lane-label">Custom Report pipeline · <em>5-stage chain, auto-triggered</em></div>
+          <div class="flow-lane-row pipeline">
+            <div class="node agent">
+              <div class="node-label">Agent · Intake</div>
+              <div class="node-title">Intake</div>
+              <div class="node-meta">No auth · ≤3 turns</div>
+            </div>
+            <div class="edge-h"></div>
+            <div class="node agent">
+              <div class="node-label">Agent · Builder</div>
+              <div class="node-title">Builder</div>
+              <div class="node-meta">Schema → SQL → HTML</div>
+            </div>
+            <div class="edge-h"><div class="edge-label optional">if auto-review</div></div>
+            <div class="node agent">
+              <div class="node-label">Agent · Reviewer</div>
+              <div class="node-title">Reviewer</div>
+              <div class="node-meta">4-criterion rubric</div>
+            </div>
+            <div class="edge-h"><div class="edge-label optional">if pass</div></div>
+            <div class="node">
+              <div class="node-label">Step · Approver</div>
+              <div class="node-title">Approver</div>
+              <div class="node-meta">→ approved_sent</div>
+            </div>
+            <div class="edge-h"></div>
+            <div class="node">
+              <div class="node-label">Step · Delivery</div>
+              <div class="node-title">Email (SMTP)</div>
+              <div class="node-meta">smtplib · Python</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="flow-legend">
+        <div><span class="lg-dot step"></span>Deterministic step</div>
+        <div><span class="lg-dot agent"></span>Claude agent</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SYSTEM OVERVIEW -->
+<section class="section alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker"><span class="chip"></span>System anatomy</div>
+        <h2 class="section-title">How the system fits together</h2>
+      </div>
+    </div>
+    <div class="system-overview">
+      <div class="so-intro">
+        <p>A system where historical program data feeds current planning and decisions, and a request for a new report runs itself end-to-end. The real closed loop: a report is requested, built by an agent, reviewed by a second agent against the original request, and delivered — with a human able to step in at any point.</p>
+      </div>
+      <div class="so-grid">
+        <div class="so-block">
+          <div class="so-block-label">Data layer</div>
+          <div class="so-block-body"><em>Supabase Postgres.</em> Toolkit line items with full lifecycle — specs, selected vendor pricing, and order snapshots across original / revised / final stages. Analytical views power the dashboards.</div>
+        </div>
+        <div class="so-block warm">
+          <div class="so-block-label">Agentic layer</div>
+          <div class="so-block-body"><em>Six AI-powered agents.</em> A chat analyst that answers questions about data; a report-intake agent; a report-builder agent; a review agent that grades each report against the original request; an MOQ recommender (Python + AI); and a weekly chat-themes summarizer.</div>
+        </div>
+        <div class="so-block">
+          <div class="so-block-label">Pipelines</div>
+          <div class="so-block-body"><em>Supabase webhook → auto-build.</em> A new report request fires the builder agent. A review agent then scores it; on a passing grade the approved report is emailed to the user.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>Overclock Hub · <em>v0.4.0</em> · Marketing Programs Management System</div>
+    <div>Overclock Capstone · <em>2026</em></div>
+  </div>
+</footer>
+
+</div><!-- /appContent -->
+
+<script>
+if (!window.APP_CONFIG || !window.APP_CONFIG.SUPABASE_URL || !window.APP_CONFIG.SUPABASE_ANON) {
+  document.body.innerHTML = '<div style="padding:48px;font-family:DM Mono,monospace;color:#C0392B;background:#f4f6f9;min-height:100vh;"><h2 style="font-family:Sora,sans-serif;color:#0a0d14;margin-bottom:14px;">Missing config</h2><p style="font-size:13px;line-height:1.6;color:#4c545e;">Copy <code>site/config.example.js</code> to <code>site/config.local.js</code> and fill in Supabase URL + anon key, then reload.</p></div>';
+  throw new Error('APP_CONFIG missing');
+}
+const { createClient } = supabase;
+const sb = createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON);
+
+async function signIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('gateInput').value;
+  const errorEl = document.getElementById('gateError');
+  const btn = document.getElementById('signInBtn');
+  if (!email || !password) { errorEl.textContent = 'Email and password required'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  errorEl.textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (error) {
+    document.getElementById('gateInput').classList.add('error');
+    errorEl.textContent = error.message.includes('Invalid') ? 'Wrong email or password' : error.message;
+    setTimeout(() => document.getElementById('gateInput').classList.remove('error'), 400);
+    return;
+  }
+  enterApp(data.session);
+}
+async function signOut() {
+  await sb.auth.signOut();
+  document.documentElement.classList.remove('has-token');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('passwordGate').classList.remove('hidden');
+}
+function enterApp(session) {
+  document.getElementById('passwordGate').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('navUser').textContent = session?.user?.email || '';
+  // Flow-map SVG needs real container dimensions, so re-draw after reveal.
+  requestAnimationFrame(() => { try { drawLines(); } catch(_) {} });
+}
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) enterApp(session);
+  else {
+    document.documentElement.classList.remove('has-token');
+    document.getElementById('emailInput').focus();
+  }
+});
+
+function drawLines(){
+  const svg=document.querySelector('.flow-svg');
+  const wrap=svg.parentElement;
+  const w=wrap.clientWidth,h=wrap.clientHeight;
+  svg.setAttribute('width',w);svg.setAttribute('height',h);
+  const nodes=[...document.querySelectorAll('.flow-canvas .node')];
+  const wrect=wrap.getBoundingClientRect();
+  while(svg.children.length>1) svg.removeChild(svg.lastChild);
+  for(let i=0;i<nodes.length-1;i++){
+    const a=nodes[i].getBoundingClientRect(),b=nodes[i+1].getBoundingClientRect();
+    const x1=a.right-wrect.left,y1=a.top-wrect.top+a.height/2;
+    const x2=b.left-wrect.left,y2=b.top-wrect.top+b.height/2;
+    if(Math.abs(y1-y2)>4 && x2<x1){continue;}
+    const ns='http://www.w3.org/2000/svg';
+    const path=document.createElementNS(ns,'path');
+    const mx=(x1+x2)/2;
+    path.setAttribute('d',`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute('class','edge');
+    path.setAttribute('marker-end','url(#arr2)');
+    svg.appendChild(path);
+  }
+}
+window.addEventListener('load',drawLines);
+window.addEventListener('resize',drawLines);
+</script>
+</body>
+</html>

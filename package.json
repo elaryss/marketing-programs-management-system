@@ -1,0 +1,16 @@
+{
+  "name": "marketing-programs-mgmt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketing Programs Management System — static site on Vercel + Supabase, with a Claude-powered chat API.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build-config.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
